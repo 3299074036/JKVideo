@@ -40,7 +40,7 @@ import {
 import { BigVideoCard } from "../../components/BigVideoCard";
 import { FollowedLiveStrip } from "../../components/FollowedLiveStrip";
 import { RankingList, type RankingListHandle } from "../../components/RankingList";
-import { DynamicList, type DynamicListHandle } from "../../components/DynamicList";
+import { RegionGrid, type RegionGridHandle } from "../../components/RegionGrid";
 import { useTheme } from "../../utils/theme";
 import { useVisibleBigKeyStore } from "../../store/visibleBigKeyStore";
 import type { LiveRoom } from "../../services/types";
@@ -51,22 +51,22 @@ const NAV_H = HEADER_H + TAB_H;
 
 const VIEWABILITY_CONFIG = { itemVisiblePercentThreshold: 50 };
 
-type TabKey = "hot" | "ranking" | "dynamic" | "live";
+type TabKey = "hot" | "live" | "ranking" | "region";
 
 const TABS: { key: TabKey; label: string }[] = [
+  { key: "live", label: "直播" },
   { key: "hot", label: "热门" },
   { key: "ranking", label: "排行榜" },
-  { key: "dynamic", label: "动态" },
-  { key: "live", label: "直播" },
+  { key: "region", label: "分区" },
 ];
 
 const TAB_INDEX: Record<TabKey, number> = {
-  hot: 0,
-  ranking: 1,
-  dynamic: 2,
-  live: 3,
+  live: 0,
+  hot: 1,
+  ranking: 2,
+  region: 3,
 };
-const INDEX_TAB: TabKey[] = ["hot", "ranking", "dynamic", "live"];
+const INDEX_TAB: TabKey[] = ["live", "hot", "ranking", "region"];
 
 // 滚动累计阈值：方向反转后需累计滚动该距离才触发显隐切换
 const SCROLL_THRESHOLD = 40;
@@ -186,18 +186,19 @@ export default function HomeScreen() {
 
   // 各 tab 的导航栏显隐状态（行为一致，抽成 hook）
   const tabHeaders = {
+    live: useCollapsibleHeader(),
     hot: useCollapsibleHeader(),
     ranking: useCollapsibleHeader(),
-    dynamic: useCollapsibleHeader(),
-    live: useCollapsibleHeader(),
+    region: useCollapsibleHeader(),
   };
 
   useEffect(() => {
     load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const rankingRef = useRef<RankingListHandle>(null);
-  const dynamicRef = useRef<DynamicListHandle>(null);
+  const regionRef = useRef<RegionGridHandle>(null);
   // 排行/动态 tab 首次进入时才挂载列表，避免首页打开就多发请求
   const [visitedTabs, setVisitedTabs] = useState<TabKey[]>(["hot"]);
   const markVisited = useCallback((key: TabKey) => {
@@ -215,9 +216,9 @@ export default function HomeScreen() {
         } else if (key === "ranking") {
           rankingRef.current?.scrollToTop();
           rankingRef.current?.refresh();
-        } else if (key === "dynamic") {
-          dynamicRef.current?.scrollToTop();
-          dynamicRef.current?.refresh();
+        } else if (key === "region") {
+          regionRef.current?.scrollToTop();
+          regionRef.current?.refresh();
         } else {
           liveListRef.current?.scrollToOffset({ offset: 0, animated: true });
           liveRefresh(liveAreaId);
@@ -327,74 +328,10 @@ export default function HomeScreen() {
       <PagerView
         ref={pagerRef}
         style={styles.pager}
-        initialPage={0}
+        initialPage={1}
         scrollEnabled={false}
         onPageSelected={onPageSelected}
       >
-        {/* 热门列表 */}
-        <View key="hot" collapsable={false}>
-          <Animated.FlatList
-            ref={hotListRef as any}
-            style={styles.listContainer}
-            data={rows}
-            keyExtractor={(row: any) =>
-              row.type === "big"
-                ? `big-${row.item.bvid}`
-                : `pair-${row.left.bvid}-${row.right?.bvid ?? "empty"}`
-            }
-            contentContainerStyle={{
-              paddingTop: insets.top + NAV_H + 6,
-              paddingBottom: insets.bottom + 16,
-            }}
-            renderItem={renderItem}
-            refreshControl={
-              <RefreshControl
-                refreshing={refreshing}
-                onRefresh={refresh}
-                progressViewOffset={insets.top + NAV_H}
-              />
-            }
-            onEndReached={() => load()}
-            onEndReachedThreshold={0.5}
-            viewabilityConfig={VIEWABILITY_CONFIG}
-            onViewableItemsChanged={onViewableItemsChangedRef}
-            ListFooterComponent={
-              <View style={styles.footer}>
-                {loading && <ActivityIndicator color="#00AEEC" />}
-              </View>
-            }
-            onScroll={tabHeaders.hot.onScroll}
-            scrollEventThrottle={16}
-            windowSize={7}
-            maxToRenderPerBatch={6}
-            removeClippedSubviews={true}
-          />
-        </View>
-
-        {/* 排行榜 */}
-        <View key="ranking" collapsable={false} style={styles.listContainer}>
-          {visitedTabs.includes("ranking") && (
-            <RankingList
-              ref={rankingRef}
-              topPadding={insets.top + NAV_H + 6}
-              onScroll={tabHeaders.ranking.onScroll}
-            />
-          )}
-        </View>
-
-        {/* 动态 */}
-        <View key="dynamic" collapsable={false} style={styles.listContainer}>
-          {visitedTabs.includes("dynamic") && (
-            <DynamicList
-              ref={dynamicRef}
-              topPadding={insets.top + NAV_H + 6}
-              onScroll={tabHeaders.dynamic.onScroll}
-              onLoginPress={() => setShowLogin(true)}
-            />
-          )}
-        </View>
-
-        {/* 直播列表 */}
         <View key="live" collapsable={false}>
           <Animated.FlatList
             ref={liveListRef as any}
@@ -463,6 +400,66 @@ export default function HomeScreen() {
             maxToRenderPerBatch={6}
             removeClippedSubviews={true}
           />
+        </View>
+        <View key="hot" collapsable={false}>
+          <Animated.FlatList
+            ref={hotListRef as any}
+            style={styles.listContainer}
+            data={rows}
+            keyExtractor={(row: any) =>
+              row.type === "big"
+                ? `big-${row.item.bvid}`
+                : `pair-${row.left.bvid}-${row.right?.bvid ?? "empty"}`
+            }
+            contentContainerStyle={{
+              paddingTop: insets.top + NAV_H + 6,
+              paddingBottom: insets.bottom + 16,
+            }}
+            renderItem={renderItem}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={refresh}
+                progressViewOffset={insets.top + NAV_H}
+              />
+            }
+            onEndReached={() => load()}
+            onEndReachedThreshold={0.5}
+            viewabilityConfig={VIEWABILITY_CONFIG}
+            onViewableItemsChanged={onViewableItemsChangedRef}
+            ListFooterComponent={
+              <View style={styles.footer}>
+                {loading && <ActivityIndicator color="#00AEEC" />}
+              </View>
+            }
+            onScroll={tabHeaders.hot.onScroll}
+            scrollEventThrottle={16}
+            windowSize={7}
+            maxToRenderPerBatch={6}
+            removeClippedSubviews={true}
+          />
+        </View>
+
+        {/* 排行榜 */}
+        <View key="ranking" collapsable={false} style={styles.listContainer}>
+          {visitedTabs.includes("ranking") && (
+            <RankingList
+              ref={rankingRef}
+              topPadding={insets.top + NAV_H + 6}
+              onScroll={tabHeaders.ranking.onScroll}
+            />
+          )}
+        </View>
+
+        {/* 分区 */}
+        <View key="region" collapsable={false} style={styles.listContainer}>
+          {visitedTabs.includes("region") && (
+            <RegionGrid
+              ref={regionRef}
+              topPadding={insets.top + NAV_H + 6}
+              onScroll={tabHeaders.region.onScroll}
+            />
+          )}
         </View>
       </PagerView>
 
@@ -602,12 +599,11 @@ const styles = StyleSheet.create({
   tabRow: {
     height: TAB_H,
     backgroundColor: "#fff",
-    paddingHorizontal: 16,
     flexDirection: "row",
     alignItems: "center",
-    gap: 20,
   },
   tabItem: {
+    flex: 1,
     alignItems: "center",
     justifyContent: "center",
     height: TAB_H,

@@ -36,6 +36,19 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
+        name="dynamic"
+        options={{
+          title: '动态',
+          tabBarIcon: ({ color, size, focused }) => (
+            <Ionicons
+              name={focused ? 'planet' : 'planet-outline'}
+              size={size}
+              color={color}
+            />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="mine"
         options={{
           title: '我的',

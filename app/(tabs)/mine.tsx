@@ -26,10 +26,9 @@ interface MenuEntry {
 }
 
 const MENUS: MenuEntry[] = [
+  { key: 'followings', label: '我的关注', icon: 'heart-outline', route: '/followings', needLogin: true },
   { key: 'history', label: '观看历史', icon: 'time-outline', route: '/history', needLogin: false },
   { key: 'favorites', label: '我的收藏', icon: 'star-outline', route: '/favorites', needLogin: true },
-  { key: 'followings', label: '我的关注', icon: 'heart-outline', route: '/followings', needLogin: true },
-  { key: 'downloads', label: '下载管理', icon: 'download-outline', route: '/downloads', needLogin: false },
   { key: 'settings', label: '设置', icon: 'settings-outline', route: '/settings', needLogin: false },
 ];
 
