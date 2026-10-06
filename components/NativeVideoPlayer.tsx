@@ -98,6 +98,8 @@ interface Props {
   upName?: string;
   upFace?: string;
   onlineCount?: number;
+  /** 点击全屏顶栏 UP 主头像/昵称，跳转 UP 主页 */
+  onUpPress?: () => void;
 }
 
 export const NativeVideoPlayer = forwardRef<NativeVideoPlayerRef, Props>(
@@ -126,6 +128,7 @@ export const NativeVideoPlayer = forwardRef<NativeVideoPlayerRef, Props>(
       upName,
       upFace,
       onlineCount,
+      onUpPress,
     }: Props,
     ref,
   ) {
@@ -908,9 +911,16 @@ export const NativeVideoPlayer = forwardRef<NativeVideoPlayerRef, Props>(
               )}
             </LinearGradient>
 
-            {/* 全屏：返回键下方的 UP 主头像 / 昵称 / 在线人数 */}
+            {/* 全屏：返回键下方的 UP 主头像 / 昵称 / 在线人数，点击跳转 UP 主页 */}
             {isFullscreen && !!upName && (
-              <View style={styles.fsUpInfo} pointerEvents="none">
+              <TouchableOpacity
+                style={styles.fsUpInfo}
+                onPress={() => {
+                  onUpPress?.();
+                  showAndReset();
+                }}
+                hitSlop={8}
+              >
                 {!!upFace && (
                   <Image source={{ uri: upFace }} style={styles.upAvatar} />
                 )}
@@ -924,7 +934,7 @@ export const NativeVideoPlayer = forwardRef<NativeVideoPlayerRef, Props>(
                     </Text>
                   )}
                 </View>
-              </View>
+              </TouchableOpacity>
             )}
 
             <TouchableOpacity
@@ -1460,22 +1470,22 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   upAvatar: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    marginRight: 8,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    marginRight: 7,
     backgroundColor: "rgba(255,255,255,0.15)",
   },
   upName: {
     color: "#fff",
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: "600",
-    maxWidth: 220,
+    maxWidth: 200,
   },
   upOnline: {
     color: "rgba(255,255,255,0.7)",
-    fontSize: 11,
-    marginTop: 2,
+    fontSize: 10,
+    marginTop: 1,
   },
   ctrlBtn: { paddingHorizontal: 8, paddingVertical: 4 },
   timeText: {
