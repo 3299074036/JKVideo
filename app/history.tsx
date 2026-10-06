@@ -197,7 +197,7 @@ export default function HistoryScreen() {
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: theme.bg }]} edges={['left', 'right']}>
-      <View style={[styles.topBar, { paddingTop: insets.top, backgroundColor: theme.card, borderBottomColor: theme.border }]}>
+      <View style={[styles.topBar, { height: 44 + insets.top, paddingTop: insets.top, backgroundColor: theme.card, borderBottomColor: theme.border }]}>
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} activeOpacity={0.7}>
           <Ionicons name="chevron-back" size={24} color={theme.text} />
         </TouchableOpacity>
@@ -282,7 +282,6 @@ export default function HistoryScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1 },
   topBar: {
-    height: 44,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',

@@ -7,7 +7,7 @@ import {
   Animated,
   Platform,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useSegments } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLiveStore } from '../store/liveStore';
@@ -29,6 +29,9 @@ export function LiveMiniPlayer() {
   const videoMiniActive = useVideoStore(s => s.isActive);
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const segments = useSegments();
+  // 在 tab 页时把悬浮窗抬到底栏（约 60 高）上方，避免盖住 tab
+  const onTab = segments[0] === '(tabs)';
   // 关闭时先把 Video 暂停一帧，让 native 释放连接，再 unmount
   const [paused, setPaused] = useState(false);
 
@@ -50,7 +53,7 @@ export function LiveMiniPlayer() {
 
   if (!isActive) return null;
 
-  const bottomOffset = insets.bottom + 16 + (videoMiniActive ? 106 : 0);
+  const bottomOffset = insets.bottom + (onTab ? 76 : 16) + (videoMiniActive ? 106 : 0);
 
   // Web 端降级：封面图 + LIVE 徽标
   if (Platform.OS === 'web') {

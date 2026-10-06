@@ -5,6 +5,7 @@ import pako from 'pako';
 import type { VideoItem, Comment, PlayUrlResponse, QRCodeInfo, VideoShotData, DanmakuItem, LiveRoom, LiveRoomDetail, LiveAnchorInfo, LiveStreamInfo, SearchSuggestItem, HotSearchItem, FollowTag, DynamicItem } from './types';
 import { signWbi } from '../utils/wbi';
 import { parseDanmakuXml } from '../utils/danmaku';
+import { parseCount } from '../utils/format';
 import { getSecure, setSecure } from '../utils/secureStorage';
 
 // @react-native-cookies/cookies 只在原生端可用；web 走代理头，这里懒加载避免 web 构建引入原生代码。
@@ -725,10 +726,10 @@ export async function getHistoryList(
   const cursor = data.cursor ?? {};
   return {
     items: list
-      .filter((it: any) => it.business === 'archive' && it.history?.bvid)
+      .filter((it: any) => it.history?.bvid || it.bvid)
       .map((it: any) => ({
-        kid: String(it.kid ?? ''),
-        bvid: it.history.bvid,
+        kid: String(it.kid ?? it.history?.bvid ?? it.bvid ?? ''),
+        bvid: it.history?.bvid ?? it.bvid,
         title: it.title ?? '',
         pic: it.cover ?? '',
         owner: {
@@ -739,7 +740,7 @@ export async function getHistoryList(
         viewAt: it.view_at ?? 0,
         progress: it.progress ?? -1,
         duration: it.duration ?? 0,
-        business: it.business,
+        business: it.business ?? 'archive',
       })),
     max: cursor.max ?? 0,
     viewAt: cursor.view_at ?? 0,
@@ -775,17 +776,32 @@ export async function clearHistory(): Promise<void> {
   }
 }
 
-/** 自己的收藏夹列表。 */
-export async function getFavFolders(): Promise<FavFolder[]> {
-  const res = await api.get('/x/v3/fav/folder/created/list-all');
-  if (res.data?.code !== 0) return [];
-  const list: any[] = res.data?.data?.list ?? [];
-  return list.map((f: any) => ({
-    id: f.id,
-    title: f.title ?? '',
-    mediaCount: f.media_count ?? 0,
-    cover: f.cover ?? '',
-  }));
+/** 自己的收藏夹列表。uid 可选，用于 list-all 为空时的 fallback。 */
+export async function getFavFolders(uid?: number): Promise<FavFolder[]> {
+  const parse = (d: any): FavFolder[] => {
+    const list: any[] = d?.data?.list ?? [];
+    return list.map((f: any) => ({
+      id: f.id,
+      title: f.title ?? '',
+      mediaCount: f.media_count ?? 0,
+      cover: f.cover ?? '',
+    }));
+  };
+  // list-all 必须带 up_mid，否则 B 站返回 code -400「请求错误」
+  const res = await api.get('/x/v3/fav/folder/created/list-all', {
+    params: uid ? { up_mid: uid } : {},
+  });
+  if (res.data?.code !== 0) throw new Error(res.data?.message || `code=${res.data?.code}`);
+  let folders = parse(res.data);
+  if (folders.length === 0 && uid) {
+    // list-all 为空时，用标准的用户收藏夹接口再试一次
+    const res2 = await api.get('/x/v3/fav/folder/created/list', {
+      params: { up_mid: uid, pn: 1, ps: 100 },
+    });
+    if (res2.data?.code !== 0) throw new Error(res2.data?.message || `code=${res2.data?.code}`);
+    folders = parse(res2.data);
+  }
+  return folders;
 }
 
 /** 收藏夹内的视频。 */
@@ -819,6 +835,28 @@ export async function getFavResources(
         },
       })),
     hasMore: data.has_more ?? false,
+  };
+}
+
+/** 指定关注分组下的 UP 主列表（tagid=0 为默认分组）。data 直接是数组。 */
+export async function getTagFollowings(
+  tagid: number,
+  pn = 1,
+  ps = 20,
+): Promise<{ items: FollowUser[]; hasMore: boolean }> {
+  const res = await api.get('/x/relation/tag', {
+    params: { tagid, pn, ps },
+  });
+  if (res.data?.code !== 0) return { items: [], hasMore: false };
+  const list: any[] = Array.isArray(res.data?.data) ? res.data.data : [];
+  return {
+    items: list.map((u: any) => ({
+      mid: u.mid,
+      uname: u.uname ?? '',
+      face: u.face ?? '',
+      sign: u.sign ?? '',
+    })),
+    hasMore: list.length >= ps,
   };
 }
 
@@ -952,7 +990,7 @@ export async function getDynamicFeed(
         title: String(archive.title ?? ''),
         cover: String(archive.cover ?? ''),
         duration: Number(archive.duration ?? 0),
-        playCount: Number(archive.stat?.play ?? 0),
+        playCount: parseCount(archive.stat?.play),
         text: String(dyn?.desc?.text ?? ''),
       });
     } else {

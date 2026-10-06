@@ -7,18 +7,22 @@ import {
   FlatList,
   ActivityIndicator,
   RefreshControl,
+  ScrollView,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../store/authStore';
-import { getFollowings } from '../services/bilibili';
-import type { FollowUser } from '../services/types';
+import { getFollowings, getFollowTags, getTagFollowings } from '../services/bilibili';
+import type { FollowUser, FollowTag } from '../services/types';
 import { useTheme } from '../utils/theme';
 import { proxyImageUrl } from '../utils/imageUrl';
 
 const PAGE_SIZE = 20;
+
+/** null = 全部关注，其他为 tagid */
+type SelTag = number | null;
 
 export default function FollowingsScreen() {
   const router = useRouter();
@@ -26,22 +30,37 @@ export default function FollowingsScreen() {
   const insets = useSafeAreaInsets();
   const uid = useAuthStore((s) => s.uid);
 
+  const [tags, setTags] = useState<FollowTag[]>([]);
+  const [selTag, setSelTag] = useState<SelTag>(null);
   const [users, setUsers] = useState<FollowUser[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const loadingRef = useRef(false);
+  const selTagRef = useRef<SelTag>(null);
+  selTagRef.current = selTag;
 
   const load = useCallback(async (pn: number, reset = false) => {
     if (!uid || loadingRef.current) return;
+    const tag = selTagRef.current;
     loadingRef.current = true;
     if (reset) setRefreshing(true); else setLoading(true);
     try {
-      const r = await getFollowings(Number(uid), pn, PAGE_SIZE);
-      setUsers((prev) => (reset ? r.items : [...prev, ...r.items]));
-      setTotal(r.total);
-      setPage(pn);
+      if (tag == null) {
+        const r = await getFollowings(Number(uid), pn, PAGE_SIZE);
+        setUsers((prev) => (reset ? r.items : [...prev, ...r.items]));
+        setTotal(r.total);
+        setHasMore(pn * PAGE_SIZE < r.total);
+        setPage(pn);
+      } else {
+        const r = await getTagFollowings(tag, pn, PAGE_SIZE);
+        setUsers((prev) => (reset ? r.items : [...prev, ...r.items]));
+        setTotal(0);
+        setHasMore(r.hasMore);
+        setPage(pn);
+      }
     } catch {}
     finally {
       loadingRef.current = false;
@@ -51,9 +70,21 @@ export default function FollowingsScreen() {
   }, [uid]);
 
   useEffect(() => {
+    getFollowTags().then(setTags).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    setUsers([]);
+    setPage(1);
+    setHasMore(true);
     load(1, true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [uid]);
+  }, [uid, selTag]);
+
+  const switchTag = (t: SelTag) => {
+    if (t === selTag) return;
+    setSelTag(t);
+  };
 
   const renderItem = useCallback(({ item }: { item: FollowUser }) => (
     <TouchableOpacity
@@ -80,17 +111,51 @@ export default function FollowingsScreen() {
     </TouchableOpacity>
   ), [router, theme]);
 
+  const selTagName = selTag == null ? '全部' : (tags.find((t) => t.tagid === selTag)?.name ?? '');
+
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: theme.bg }]} edges={['left', 'right']}>
-      <View style={[styles.topBar, { paddingTop: insets.top, backgroundColor: theme.card, borderBottomColor: theme.border }]}>
+      <View style={[styles.topBar, { height: 44 + insets.top, paddingTop: insets.top, backgroundColor: theme.card, borderBottomColor: theme.border }]}>
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} activeOpacity={0.7}>
           <Ionicons name="chevron-back" size={24} color={theme.text} />
         </TouchableOpacity>
         <Text style={[styles.topTitle, { color: theme.text }]}>
-          我的关注{total > 0 ? `（${total}）` : ''}
+          我的关注{total > 0 && selTag == null ? `（${total}）` : ''}
         </Text>
         <View style={styles.backBtn} />
       </View>
+
+      {tags.length > 0 && (
+        <View style={[styles.chipBar, { backgroundColor: theme.card, borderBottomColor: theme.border }]}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.chipContent}
+          >
+            <TouchableOpacity
+              style={[styles.chip, selTag == null && styles.chipActive]}
+              activeOpacity={0.7}
+              onPress={() => switchTag(null)}
+            >
+              <Text style={[styles.chipText, { color: theme.textSub }, selTag == null && styles.chipTextActive]}>
+                全部
+              </Text>
+            </TouchableOpacity>
+            {tags.map((t) => (
+              <TouchableOpacity
+                key={t.tagid}
+                style={[styles.chip, selTag === t.tagid && styles.chipActive]}
+                activeOpacity={0.7}
+                onPress={() => switchTag(t.tagid)}
+              >
+                <Text style={[styles.chipText, { color: theme.textSub }, selTag === t.tagid && styles.chipTextActive]}>
+                  {t.name}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+      )}
 
       <FlatList
         data={users}
@@ -101,7 +166,7 @@ export default function FollowingsScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={() => load(1, true)} />
         }
         onEndReached={() => {
-          if (users.length < total) load(page + 1);
+          if (hasMore && !loading) load(page + 1);
         }}
         onEndReachedThreshold={0.5}
         ListFooterComponent={
@@ -115,7 +180,9 @@ export default function FollowingsScreen() {
           !loading && !refreshing ? (
             <View style={styles.empty}>
               <Ionicons name="heart-outline" size={48} color={theme.iconDefault} />
-              <Text style={[styles.emptyText, { color: theme.textSub }]}>还没有关注任何 UP 主</Text>
+              <Text style={[styles.emptyText, { color: theme.textSub }]}>
+                {selTag == null ? '还没有关注任何 UP 主' : `「${selTagName}」分组暂无 UP 主`}
+              </Text>
             </View>
           ) : null
         }
@@ -127,7 +194,6 @@ export default function FollowingsScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1 },
   topBar: {
-    height: 44,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -136,6 +202,17 @@ const styles = StyleSheet.create({
   },
   backBtn: { width: 40, alignItems: 'center' },
   topTitle: { fontSize: 17, fontWeight: '600' },
+  chipBar: { borderBottomWidth: StyleSheet.hairlineWidth },
+  chipContent: { paddingHorizontal: 12, paddingVertical: 10, gap: 8 },
+  chip: {
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: 'rgba(128,128,128,0.12)',
+  },
+  chipActive: { backgroundColor: '#00AEEC' },
+  chipText: { fontSize: 13 },
+  chipTextActive: { color: '#fff', fontWeight: '600' },
   list: { padding: 12, gap: 10 },
   row: {
     flexDirection: 'row',

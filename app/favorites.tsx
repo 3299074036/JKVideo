@@ -12,6 +12,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useAuthStore } from '../store/authStore';
 import { getFavFolders, getFavResources } from '../services/bilibili';
 import type { FavFolder, FavResource, VideoItem } from '../services/types';
 import { VideoCard } from '../components/VideoCard';
@@ -39,6 +40,7 @@ export default function FavoritesScreen() {
 
   const [folders, setFolders] = useState<FavFolder[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [foldersError, setFoldersError] = useState('');
   const [videos, setVideos] = useState<FavResource[]>([]);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
@@ -46,12 +48,20 @@ export default function FavoritesScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const loadingRef = useRef(false);
 
-  useEffect(() => {
-    getFavFolders().then((list) => {
+  const loadFolders = useCallback(() => {
+    setFoldersError('');
+    const uid = useAuthStore.getState().uid;
+    getFavFolders(uid ? Number(uid) : undefined).then((list) => {
       setFolders(list);
-      if (list.length > 0) setSelectedId(list[0].id);
-    }).catch(() => {});
+      if (list.length > 0) setSelectedId((prev) => prev ?? list[0].id);
+    }).catch((e: any) => {
+      setFoldersError(e?.message || '加载失败');
+    });
   }, []);
+
+  useEffect(() => {
+    loadFolders();
+  }, [loadFolders]);
 
   const loadResources = useCallback(async (folderId: number, pn: number, reset = false) => {
     if (loadingRef.current) return;
@@ -109,7 +119,7 @@ export default function FavoritesScreen() {
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: theme.bg }]} edges={['left', 'right']}>
-      <View style={[styles.topBar, { paddingTop: insets.top, backgroundColor: theme.card, borderBottomColor: theme.border }]}>
+      <View style={[styles.topBar, { height: 44 + insets.top, paddingTop: insets.top, backgroundColor: theme.card, borderBottomColor: theme.border }]}>
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} activeOpacity={0.7}>
           <Ionicons name="chevron-back" size={24} color={theme.text} />
         </TouchableOpacity>
@@ -174,10 +184,23 @@ export default function FavoritesScreen() {
         ListEmptyComponent={
           !loading && !refreshing ? (
             <View style={styles.empty}>
-              <Ionicons name="star-outline" size={48} color={theme.iconDefault} />
+              <Ionicons
+                name={foldersError ? 'cloud-offline-outline' : 'star-outline'}
+                size={48}
+                color={theme.iconDefault}
+              />
               <Text style={[styles.emptyText, { color: theme.textSub }]}>
-                {selectedFolder ? '这个收藏夹是空的' : '暂无收藏夹'}
+                {foldersError
+                  ? `加载失败：${foldersError}`
+                  : selectedFolder
+                    ? '这个收藏夹是空的'
+                    : '暂无收藏夹'}
               </Text>
+              {foldersError ? (
+                <TouchableOpacity style={styles.retryBtn} onPress={loadFolders} activeOpacity={0.7}>
+                  <Text style={styles.retryText}>重试</Text>
+                </TouchableOpacity>
+              ) : null}
             </View>
           ) : null
         }
@@ -189,7 +212,6 @@ export default function FavoritesScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1 },
   topBar: {
-    height: 44,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -211,4 +233,12 @@ const styles = StyleSheet.create({
   empty: { alignItems: 'center', paddingTop: 120, gap: 12 },
   emptyText: { fontSize: 14 },
   footer: { paddingVertical: 16, alignItems: 'center' },
+  retryBtn: {
+    marginTop: 8,
+    paddingHorizontal: 24,
+    paddingVertical: 8,
+    borderRadius: 18,
+    backgroundColor: '#00AEEC',
+  },
+  retryText: { color: '#fff', fontSize: 14, fontWeight: '600' },
 });
