@@ -50,13 +50,7 @@ function RootLayout() {
     <SafeAreaProvider>
       <StatusBar style={darkMode ? 'light' : 'dark'} />
       <View style={{ flex: 1 }}>
-        <ErrorBoundary
-          fallback={({ error }: any) => (
-            <Text style={{ padding: 32 }} selectable>
-              {`DEBUG ${error?.message ?? String(error)}\n${String(error?.stack ?? '').slice(0, 800)}`}
-            </Text>
-          )}
-        >
+        <ErrorBoundary fallback={<Text style={{ padding: 32, textAlign: 'center' }}>发生错误，请重启 App</Text>}>
           <Stack screenOptions={{ headerShown: false }}>
             <Stack.Screen name="(tabs)" />
             <Stack.Screen
