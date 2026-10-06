@@ -1,6 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { View, StyleSheet, Text, Platform, StatusBar, BackHandler, useWindowDimensions } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 // expo-screen-orientation requires a dev build; gracefully degrade in Expo Go
 let ScreenOrientation: typeof import('expo-screen-orientation') | null = null;
@@ -48,8 +47,9 @@ interface Props {
   pages?: VideoPageInfo[];
   pageIndex?: number;
   onPageChange?: (idx: number) => void;
-  /** 正在切换的分 P 下标（切换信号）；null 表示无切换/切换失败 */
-  switchingPageIdx?: number | null;
+  /** 全屏状态（由外层 [bvid] 持有，以便全屏时关掉 SafeAreaView 的 edges） */
+  fullscreen: boolean;
+  onFullscreenChange: (v: boolean) => void;
   /** 全屏顶栏 UP 主信息 */
   upName?: string;
   upFace?: string;
@@ -58,10 +58,8 @@ interface Props {
   onUpPress?: () => void;
 }
 
-export function VideoPlayer({ playData, qualities, currentQn, onQualityChange, bvid, cid, danmakus, onTimeUpdate, initialTime, onDanmakuListPress, onBack, coverUrl, onPrevPage, onNextPage, hasPrevPage, hasNextPage, pages, pageIndex, onPageChange, switchingPageIdx, upName, upFace, onlineCount, onUpPress }: Props) {
-  const [fullscreen, setFullscreen] = useState(false);
+export function VideoPlayer({ playData, qualities, currentQn, onQualityChange, bvid, cid, danmakus, onTimeUpdate, initialTime, onDanmakuListPress, onBack, coverUrl, onPrevPage, onNextPage, hasPrevPage, hasNextPage, pages, pageIndex, onPageChange, fullscreen, onFullscreenChange, upName, upFace, onlineCount, onUpPress }: Props) {
   const { width, height } = useWindowDimensions();
-  const insets = useSafeAreaInsets();
   const VIDEO_HEIGHT = width * 0.5625;
   const needsRotation = !ScreenOrientation && fullscreen;
   const lastTimeRef = useRef(0);
@@ -86,14 +84,14 @@ export function VideoPlayer({ playData, qualities, currentQn, onQualityChange, b
   const handleEnterFullscreen = async () => {
     if (Platform.OS !== 'web')
       await ScreenOrientation?.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE_RIGHT);
-    setFullscreen(true);
+    onFullscreenChange(true);
     // 命令式隐藏状态栏：_layout 里有全局 expo-status-bar，会盖掉声明式的 hidden
     StatusBar.setHidden(true, 'fade');
     await setImmersive(true);
   };
 
   const handleExitFullscreen = async () => {
-    setFullscreen(false);
+    onFullscreenChange(false);
     StatusBar.setHidden(false, 'fade');
     await setImmersive(false);
     if (Platform.OS !== 'web')
@@ -206,18 +204,8 @@ export function VideoPlayer({ playData, qualities, currentQn, onQualityChange, b
         // 全屏层直接画在 Activity 同一窗口（不用 RN Modal）：
         // Modal 在 Android 上是独立 Dialog 窗口，有自己的状态栏控制器，
         // StatusBar.setHidden 只作用于 Activity 窗口，会被 Dialog 盖掉失效。
-        // 负 inset 撑满 SafeAreaView 的 padding，做到真全屏。
-        <View
-          style={[
-            styles.fsOverlay,
-            {
-              top: -insets.top,
-              left: -insets.left,
-              right: -insets.right,
-              bottom: -insets.bottom,
-            },
-          ]}
-        >
+        // 全屏时外层 SafeAreaView 的 edges 已关掉，这里 plain absoluteFill 即真全屏。
+        <View style={styles.fsOverlay}>
           <StatusBar hidden />
           <View style={needsRotation
             ? { width: height, height: width, transform: [{ rotate: '90deg' }] }
@@ -243,7 +231,6 @@ export function VideoPlayer({ playData, qualities, currentQn, onQualityChange, b
                 pages={pages}
                 pageIndex={pageIndex}
                 onPageChange={onPageChange}
-                switchingPageIdx={switchingPageIdx}
                 upName={upName}
                 upFace={upFace}
                 onlineCount={onlineCount}
@@ -262,7 +249,7 @@ const styles = StyleSheet.create({
   placeholderText: { fontSize: 14 },
   // 全屏覆盖层：同一 Activity 窗口内的绝对定位层，盖住页面一切内容
   fsOverlay: {
-    position: 'absolute',
+    ...StyleSheet.absoluteFillObject,
     zIndex: 999,
     elevation: 999,
     backgroundColor: '#000',

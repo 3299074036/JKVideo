@@ -106,8 +106,6 @@ interface Props {
   pages?: VideoPageInfo[];
   pageIndex?: number;
   onPageChange?: (idx: number) => void;
-  /** 正在切换的分 P 下标（切换信号）；null 表示无切换/切换失败 */
-  switchingPageIdx?: number | null;
   /** 全屏顶栏 UP 主信息 */
   upName?: string;
   upFace?: string;
@@ -142,7 +140,6 @@ export const NativeVideoPlayer = forwardRef<NativeVideoPlayerRef, Props>(
       pages,
       pageIndex,
       onPageChange,
-      switchingPageIdx,
       upName,
       upFace,
       onlineCount,
@@ -184,8 +181,6 @@ export const NativeVideoPlayer = forwardRef<NativeVideoPlayerRef, Props>(
 
     // 清晰度切换：保留进度 + loading 遮罩
     const [switching, setSwitching] = useState(false);
-    // 分 P 切换时的浮层文案（null 表示走清晰度切换文案）
-    const [pageSwitchText, setPageSwitchText] = useState<string | null>(null);
     // 分 P 选择弹窗
     const [showPages, setShowPages] = useState(false);
     const pendingSeekRef = useRef<number | null>(null);
@@ -203,7 +198,6 @@ export const NativeVideoPlayer = forwardRef<NativeVideoPlayerRef, Props>(
         prevQnRef.current !== currentQn
       ) {
         pendingSeekRef.current = currentTimeRef.current;
-        setPageSwitchText(null);
         setSwitching(true);
         // 兜底：8s 内 onLoad 没触发就强制收起遮罩
         if (switchTimeoutRef.current) clearTimeout(switchTimeoutRef.current);
@@ -218,35 +212,18 @@ export const NativeVideoPlayer = forwardRef<NativeVideoPlayerRef, Props>(
       };
     }, []);
 
-    // 分 P 切换（切换信号）：保留旧画面不清空，用转圈浮层盖住，避免黑屏 + 裸"加载中"；
-    // 失败时信号回到 null，撤掉浮层（旧流继续可播）
-    const shownSwitchRef = useRef<number | null>(null);
+    // 分 P 切换无感化：cid 变化时进度条归零（新分 P 从头播），
+    // 旧画面保留继续播，新流就绪后靠封面 + 缓冲转圈自然过渡，不弹阻塞浮层
+    const prevPageCidRef = useRef(cid);
     useEffect(() => {
-      if (switchingPageIdx != null && switchingPageIdx !== shownSwitchRef.current) {
-        shownSwitchRef.current = switchingPageIdx;
-        const total = pages?.length ?? 0;
-        const title = pages?.[switchingPageIdx]?.part;
-        setPageSwitchText(
-          `正在切换 P${switchingPageIdx + 1}${total ? `/${total}` : ""}${
-            title ? `「${title}」` : ""
-          }…`,
-        );
-        setSwitching(true);
+      const prev = prevPageCidRef.current;
+      prevPageCidRef.current = cid;
+      if (prev && cid && prev !== cid) {
         setCurrentTime(0);
-        if (switchTimeoutRef.current) clearTimeout(switchTimeoutRef.current);
-        switchTimeoutRef.current = setTimeout(() => setSwitching(false), 10000);
         showAndReset();
-      } else if (switchingPageIdx == null && shownSwitchRef.current != null) {
-        shownSwitchRef.current = null;
-        setSwitching(false);
-        setPageSwitchText(null);
-        if (switchTimeoutRef.current) {
-          clearTimeout(switchTimeoutRef.current);
-          switchTimeoutRef.current = null;
-        }
       }
       // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [switchingPageIdx]);
+    }, [cid]);
 
     const [buffered, setBuffered] = useState(0);
     // 播放中缓冲（onBuffer）：中央小转圈，不盖遮罩
@@ -339,7 +316,7 @@ export const NativeVideoPlayer = forwardRef<NativeVideoPlayerRef, Props>(
         return;
       }
       if (isDash) {
-        buildDashMpdUri(playData, currentQn, bvid)
+        buildDashMpdUri(playData, currentQn, bvid, cid)
           .then(setResolvedUrl)
           .catch(() => setResolvedUrl(playData.dash!.video[0]?.baseUrl));
       } else {
@@ -841,7 +818,6 @@ export const NativeVideoPlayer = forwardRef<NativeVideoPlayerRef, Props>(
               }
               if (switching) {
                 setSwitching(false);
-                setPageSwitchText(null);
                 if (switchTimeoutRef.current) {
                   clearTimeout(switchTimeoutRef.current);
                   switchTimeoutRef.current = null;
@@ -900,9 +876,7 @@ export const NativeVideoPlayer = forwardRef<NativeVideoPlayerRef, Props>(
         {switching && (
           <View style={styles.switchOverlay} pointerEvents="none">
             <ActivityIndicator color="#fff" size="small" />
-            <Text style={styles.switchText}>
-              {pageSwitchText ?? `切换到 ${currentDesc}…`}
-            </Text>
+            <Text style={styles.switchText}>切换到 {currentDesc}…</Text>
           </View>
         )}
 
