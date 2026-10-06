@@ -30,6 +30,7 @@ import { LiveCard } from "../../components/LiveCard";
 import { LoginModal } from "../../components/LoginModal";
 import { DownloadProgressBtn } from "../../components/DownloadProgressBtn";
 import { useVideoList } from "../../hooks/useVideoList";
+import { usePopularList } from "../../hooks/usePopularList";
 import { useLiveList } from "../../hooks/useLiveList";
 import { useAuthStore } from "../../store/authStore";
 import {
@@ -51,22 +52,24 @@ const NAV_H = HEADER_H + TAB_H;
 
 const VIEWABILITY_CONFIG = { itemVisiblePercentThreshold: 50 };
 
-type TabKey = "hot" | "live" | "ranking" | "region";
+type TabKey = "live" | "recommend" | "popular" | "ranking" | "region";
 
 const TABS: { key: TabKey; label: string }[] = [
   { key: "live", label: "直播" },
-  { key: "hot", label: "热门" },
+  { key: "recommend", label: "推荐" },
+  { key: "popular", label: "热门" },
   { key: "ranking", label: "排行榜" },
   { key: "region", label: "分区" },
 ];
 
 const TAB_INDEX: Record<TabKey, number> = {
   live: 0,
-  hot: 1,
-  ranking: 2,
-  region: 3,
+  recommend: 1,
+  popular: 2,
+  ranking: 3,
+  region: 4,
 };
-const INDEX_TAB: TabKey[] = ["live", "hot", "ranking", "region"];
+const INDEX_TAB: TabKey[] = ["live", "recommend", "popular", "ranking", "region"];
 
 // 滚动累计阈值：方向反转后需累计滚动该距离才触发显隐切换
 const SCROLL_THRESHOLD = 40;
@@ -156,6 +159,13 @@ export default function HomeScreen() {
   const router = useRouter();
   const { pages, loading, refreshing, load, refresh } = useVideoList();
   const {
+    pages: popularPages,
+    loading: popularLoading,
+    refreshing: popularRefreshing,
+    load: popularLoad,
+    refresh: popularRefresh,
+  } = usePopularList();
+  const {
     rooms,
     loading: liveLoading,
     refreshing: liveRefreshing,
@@ -166,14 +176,16 @@ export default function HomeScreen() {
   const { isLoggedIn, face } = useAuthStore();
   const [showLogin, setShowLogin] = useState(false);
   const insets = useSafeAreaInsets();
-  const [activeTab, setActiveTab] = useState<TabKey>("hot");
+  const [activeTab, setActiveTab] = useState<TabKey>("recommend");
   const [liveAreaId, setLiveAreaId] = useState(0);
 
   const theme = useTheme();
   const rows = useMemo(() => toListRows(pages), [pages]);
+  const popularRows = useMemo(() => toListRows(popularPages), [popularPages]);
   const pagerRef = useRef<PagerView>(null);
 
-  const hotListRef = useRef<FlatList>(null);
+  const recommendListRef = useRef<FlatList>(null);
+  const popularListRef = useRef<FlatList>(null);
   const liveListRef = useRef<FlatList>(null);
 
   const onViewableItemsChangedRef = useRef(
@@ -188,7 +200,8 @@ export default function HomeScreen() {
   // 各 tab 的导航栏显隐状态（行为一致，抽成 hook）
   const tabHeaders = {
     live: useCollapsibleHeader(),
-    hot: useCollapsibleHeader(),
+    recommend: useCollapsibleHeader(),
+    popular: useCollapsibleHeader(),
     ranking: useCollapsibleHeader(),
     region: useCollapsibleHeader(),
   };
@@ -201,7 +214,7 @@ export default function HomeScreen() {
   const rankingRef = useRef<RankingListHandle>(null);
   const regionRef = useRef<RegionGridHandle>(null);
   // 排行/动态 tab 首次进入时才挂载列表，避免首页打开就多发请求
-  const [visitedTabs, setVisitedTabs] = useState<TabKey[]>(["hot"]);
+  const [visitedTabs, setVisitedTabs] = useState<TabKey[]>(["recommend"]);
   const markVisited = useCallback((key: TabKey) => {
     setVisitedTabs((prev) => (prev.includes(key) ? prev : [...prev, key]));
   }, []);
@@ -211,9 +224,12 @@ export default function HomeScreen() {
       markVisited(key);
       if (key === activeTab) {
         // 点击已激活的 tab：滚动到顶部并刷新
-        if (key === "hot") {
-          hotListRef.current?.scrollToOffset({ offset: 0, animated: true });
+        if (key === "recommend") {
+          recommendListRef.current?.scrollToOffset({ offset: 0, animated: true });
           refresh();
+        } else if (key === "popular") {
+          popularListRef.current?.scrollToOffset({ offset: 0, animated: true });
+          popularRefresh();
         } else if (key === "ranking") {
           rankingRef.current?.scrollToTop();
           rankingRef.current?.refresh();
@@ -231,22 +247,26 @@ export default function HomeScreen() {
       setActiveTab(key);
       if (key === "live" && rooms.length === 0) {
         liveLoad(true, liveAreaId);
+      } else if (key === "popular" && popularPages.length === 0) {
+        popularLoad();
       }
     },
-    [activeTab, rooms.length, liveAreaId, markVisited],
+    [activeTab, rooms.length, liveAreaId, markVisited, popularPages.length, popularLoad],
   );
 
   const onPageSelected = useCallback(
     (e: any) => {
-      const key: TabKey = INDEX_TAB[e.nativeEvent.position] ?? "hot";
+      const key: TabKey = INDEX_TAB[e.nativeEvent.position] ?? "recommend";
       markVisited(key);
       if (key === activeTab) return;
       setActiveTab(key);
       if (key === "live" && rooms.length === 0) {
         liveLoad(true, liveAreaId);
+      } else if (key === "popular" && popularPages.length === 0) {
+        popularLoad();
       }
     },
-    [activeTab, rooms.length, liveAreaId, markVisited],
+    [activeTab, rooms.length, liveAreaId, markVisited, popularPages.length, popularLoad],
   );
 
   const handleLiveAreaPress = useCallback(
@@ -402,9 +422,9 @@ export default function HomeScreen() {
             removeClippedSubviews={true}
           />
         </View>
-        <View key="hot" collapsable={false}>
+        <View key="recommend" collapsable={false}>
           <Animated.FlatList
-            ref={hotListRef as any}
+            ref={recommendListRef as any}
             style={styles.listContainer}
             data={rows}
             keyExtractor={(row: any) =>
@@ -433,12 +453,52 @@ export default function HomeScreen() {
                 {loading && <ActivityIndicator color="#00AEEC" />}
               </View>
             }
-            onScroll={tabHeaders.hot.onScroll}
+            onScroll={tabHeaders.recommend.onScroll}
             scrollEventThrottle={16}
             windowSize={7}
             maxToRenderPerBatch={6}
             removeClippedSubviews={true}
           />
+        </View>
+        <View key="popular" collapsable={false}>
+          {visitedTabs.includes("popular") && (
+            <Animated.FlatList
+              ref={popularListRef as any}
+              style={styles.listContainer}
+              data={popularRows}
+              keyExtractor={(row: any) =>
+                row.type === "big"
+                  ? `popular-big-${row.item.bvid}`
+                  : `popular-pair-${row.left.bvid}-${row.right?.bvid ?? "empty"}`
+              }
+              contentContainerStyle={{
+                paddingTop: insets.top + NAV_H + 6,
+                paddingBottom: insets.bottom + 16,
+              }}
+              renderItem={renderItem}
+              refreshControl={
+                <RefreshControl
+                  refreshing={popularRefreshing}
+                  onRefresh={popularRefresh}
+                  progressViewOffset={insets.top + NAV_H}
+                />
+              }
+              onEndReached={() => popularLoad()}
+              onEndReachedThreshold={0.5}
+              viewabilityConfig={VIEWABILITY_CONFIG}
+              onViewableItemsChanged={onViewableItemsChangedRef}
+              ListFooterComponent={
+                <View style={styles.footer}>
+                  {popularLoading && <ActivityIndicator color="#00AEEC" />}
+                </View>
+              }
+              onScroll={tabHeaders.popular.onScroll}
+              scrollEventThrottle={16}
+              windowSize={7}
+              maxToRenderPerBatch={6}
+              removeClippedSubviews={true}
+            />
+          )}
         </View>
 
         {/* 排行榜 */}

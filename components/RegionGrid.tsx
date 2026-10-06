@@ -17,7 +17,7 @@ import {
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
-import { getRanking, RANK_REGIONS } from "../services/bilibili";
+import { getRegionFeed, REGION_FEED_CHANNELS } from "../services/bilibili";
 import type { VideoItem } from "../services/types";
 import { useTheme } from "../utils/theme";
 import { useSettingsStore } from "../store/settingsStore";
@@ -34,17 +34,21 @@ interface Props {
   onScroll: (e: any) => void;
 }
 
-// 分区图标映射
+// 分区图标映射（新版分区 ID）
 const REGION_ICONS: Record<number, string> = {
-  1: "color-palette-outline", // 动画
-  3: "musical-notes-outline", // 音乐
-  129: "accessibility-outline", // 舞蹈
-  4: "game-controller-outline", // 游戏
-  36: "bulb-outline", // 知识
-  188: "phone-portrait-outline", // 数码
-  160: "leaf-outline", // 生活
-  119: "happy-outline", // 鬼畜
-  211: "film-outline", // 影视
+  1005: "color-palette-outline", // 动画
+  1003: "musical-notes-outline", // 音乐
+  1004: "accessibility-outline", // 舞蹈
+  1008: "game-controller-outline", // 游戏
+  1010: "bulb-outline", // 知识
+  1012: "phone-portrait-outline", // 科技
+  1018: "fitness-outline", // 运动
+  1013: "car-outline", // 汽车
+  1020: "leaf-outline", // 生活
+  1014: "shirt-outline", // 时尚
+  1002: "star-outline", // 娱乐
+  1001: "film-outline", // 影视
+  1024: "paw-outline", // 动物
 };
 
 const REGION_COLORS = ["#00AEEC", "#FF6B9D", "#FFA940", "#9254DE", "#36CFC9", "#FF7A45"];
@@ -62,17 +66,27 @@ export const RegionGrid = forwardRef<RegionGridHandle, Props>(
     const listRef = useRef<FlatList>(null);
     // 请求序号：快速切换分区时旧响应直接丢弃（修复竞态）
     const reqTokenRef = useRef(0);
+    // 分区推荐流翻页：display_id 递增
+    const displayIdRef = useRef(1);
+    const [hasMore, setHasMore] = useState(true);
 
     const load = useCallback(
       async (rid: number, reset = false) => {
         const token = ++reqTokenRef.current;
-        if (reset) setRefreshing(true);
-        else setLoading(true);
+        if (reset) {
+          displayIdRef.current = 1;
+          setHasMore(true);
+          setRefreshing(true);
+        } else {
+          setLoading(true);
+        }
         setError("");
         try {
-          const list = await getRanking(rid);
+          const list = await getRegionFeed(rid, displayIdRef.current);
           if (reqTokenRef.current !== token) return; // 已被更新的请求抢占，丢弃
-          setItems(list);
+          if (list.length === 0) setHasMore(false);
+          else displayIdRef.current += 1;
+          setItems((prev) => (reset ? list : [...prev, ...list]));
         } catch (e: any) {
           if (reqTokenRef.current !== token) return; // 已被更新的请求抢占，丢弃
           setError(e?.message || "加载失败");
@@ -145,7 +159,7 @@ export const RegionGrid = forwardRef<RegionGridHandle, Props>(
 
     // 分区宫格
     if (selectedRid == null) {
-      const regions = RANK_REGIONS.filter((r) => r.rid !== 0);
+      const regions = REGION_FEED_CHANNELS;
       return (
         <FlatList
           data={regions}
@@ -180,7 +194,7 @@ export const RegionGrid = forwardRef<RegionGridHandle, Props>(
     }
 
     // 分区视频列表
-    const regionName = RANK_REGIONS.find((r) => r.rid === selectedRid)?.name ?? "";
+    const regionName = REGION_FEED_CHANNELS.find((r) => r.rid === selectedRid)?.name ?? "";
     return (
       <View style={[styles.wrap, { backgroundColor: theme.bg }]}>
         <View style={[styles.subHeader, { paddingTop: topPadding, backgroundColor: theme.bg }]}>
@@ -218,6 +232,15 @@ export const RegionGrid = forwardRef<RegionGridHandle, Props>(
             contentContainerStyle={styles.list}
             onScroll={onScroll}
             scrollEventThrottle={16}
+            onEndReached={() => {
+              if (hasMore && !loading && selectedRid != null) load(selectedRid);
+            }}
+            onEndReachedThreshold={0.5}
+            ListFooterComponent={
+              loading && items.length > 0 ? (
+                <ActivityIndicator color="#00AEEC" style={{ paddingVertical: 16 }} />
+              ) : null
+            }
             refreshControl={
               <RefreshControl
                 refreshing={refreshing}

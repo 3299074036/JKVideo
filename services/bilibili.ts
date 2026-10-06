@@ -990,6 +990,42 @@ export const RANK_REGIONS: { rid: number; name: string }[] = [
   { rid: 211, name: '影视' },
 ];
 
+/** 分区推荐流（官方当前分区接口，WBI 签名）。from_region 用新版分区 ID，display_id 翻页 */
+export async function getRegionFeed(feedRid: number, displayId = 1): Promise<VideoItem[]> {
+  const { imgKey, subKey } = await getWbiKeys();
+  const signed = signWbi(
+    { from_region: feedRid, display_id: displayId, request_cnt: 20, device: 'web', plat: 30, web_location: '333.40138' },
+    imgKey,
+    subKey,
+  );
+  const res = await api.get('/x/web-interface/region/feed/rcmd', { params: signed });
+  const items: any[] = res.data?.data?.archives ?? [];
+  return items
+    .filter(item => item.bvid && item.title)
+    .map(item => ({
+      ...item,
+      pic: item.pic ?? item.cover,
+      owner: item.owner ?? { mid: 0, name: item.author ?? '', face: '' },
+    } as VideoItem));
+}
+
+/** 分区 tab 的分区分组（新版分区 ID；鬼畜 1007 暂无数据，已剔除） */
+export const REGION_FEED_CHANNELS: { rid: number; name: string }[] = [
+  { rid: 1005, name: '动画' },
+  { rid: 1003, name: '音乐' },
+  { rid: 1004, name: '舞蹈' },
+  { rid: 1008, name: '游戏' },
+  { rid: 1010, name: '知识' },
+  { rid: 1012, name: '科技' },
+  { rid: 1018, name: '运动' },
+  { rid: 1013, name: '汽车' },
+  { rid: 1020, name: '生活' },
+  { rid: 1014, name: '时尚' },
+  { rid: 1002, name: '娱乐' },
+  { rid: 1001, name: '影视' },
+  { rid: 1024, name: '动物' },
+];
+
 /** 动态流：关注的人的动态（需登录）。offset 翻页，首屏传空串 */
 export async function getDynamicFeed(
   offset = '',
