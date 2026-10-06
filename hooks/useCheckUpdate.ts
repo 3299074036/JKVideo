@@ -1,0 +1,133 @@
+import { useState } from 'react';
+import { Alert, Linking, Platform } from 'react-native';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as IntentLauncher from 'expo-intent-launcher';
+import Constants from 'expo-constants';
+
+const GITHUB_API = 'https://api.github.com/repos/tiajinsha/JKVideo/releases/latest';
+
+function compareVersions(a: string, b: string): number {
+  const pa = a.replace(/^v/, '').split('.').map(Number);
+  const pb = b.replace(/^v/, '').split('.').map(Number);
+  for (let i = 0; i < 3; i++) {
+    if ((pa[i] ?? 0) > (pb[i] ?? 0)) return 1;
+    if ((pa[i] ?? 0) < (pb[i] ?? 0)) return -1;
+  }
+  return 0;
+}
+
+export function useCheckUpdate() {
+  const currentVersion = Constants.expoConfig?.version ?? '0.0.0';
+  const [isChecking, setIsChecking] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState<number | null>(null);
+
+  const checkUpdate = async () => {
+    setIsChecking(true);
+    try {
+      const res = await fetch(GITHUB_API, {
+        headers: { Accept: 'application/vnd.github+json' },
+      });
+      if (!res.ok) throw new Error(`GitHub API ${res.status}`);
+      const data = await res.json();
+
+      const latestVersion: string = data.tag_name ?? '';
+      const apkAsset = (data.assets as any[]).find((a) =>
+        (a.name as string).endsWith('.apk')
+      );
+      const downloadUrl: string = apkAsset?.browser_download_url ?? '';
+      const releaseNotes: string = data.body ?? '';
+
+      if (compareVersions(latestVersion, currentVersion) <= 0) {
+        Alert.alert('已是最新版本', `当前版本 v${currentVersion} 已是最新`);
+        return;
+      }
+
+      Alert.alert(
+        `发现新版本 ${latestVersion}`,
+        releaseNotes || '有新版本可用，是否立即下载？',
+        [
+          { text: '取消', style: 'cancel' },
+          {
+            text: '浏览器下载',
+            onPress: () => Linking.openURL(downloadUrl),
+          },
+          {
+            text: '应用内下载',
+            onPress: () => downloadAndInstall(downloadUrl, latestVersion),
+          },
+        ]
+      );
+    } catch (e: any) {
+      Alert.alert('检查失败', e?.message ?? '网络错误，请稍后重试');
+    } finally {
+      setIsChecking(false);
+    }
+  };
+
+  const openInstallSettings = () => {
+    IntentLauncher.startActivityAsync(
+      'android.settings.MANAGE_UNKNOWN_APP_SOURCES',
+      { data: 'package:com.anonymous.jkvideo' }
+    ).catch(() => {
+      // 部分旧版 Android 不支持精确跳转，回退到通用安全设置
+      IntentLauncher.startActivityAsync('android.settings.SECURITY_SETTINGS');
+    });
+  };
+
+  const triggerInstall = async (localUri: string) => {
+    const contentUri = await FileSystem.getContentUriAsync(localUri);
+    await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
+      data: contentUri,
+      flags: 1,
+      type: 'application/vnd.android.package-archive',
+    });
+  };
+
+  const downloadAndInstall = async (url: string, version: string) => {
+    if (Platform.OS !== 'android') {
+      Alert.alert('提示', '自动安装仅支持 Android 设备');
+      return;
+    }
+    const localUri = FileSystem.cacheDirectory + `JKVideo-${version}.apk`;
+    try {
+      setDownloadProgress(0);
+      const downloadResumable = FileSystem.createDownloadResumable(
+        url,
+        localUri,
+        {},
+        ({ totalBytesWritten, totalBytesExpectedToWrite }) => {
+          if (totalBytesExpectedToWrite > 0) {
+            setDownloadProgress(
+              Math.round((totalBytesWritten / totalBytesExpectedToWrite) * 100)
+            );
+          }
+        }
+      );
+      await downloadResumable.downloadAsync();
+      setDownloadProgress(null);
+
+      // Android 8.0+ 需要用户在系统设置中为本应用开启「安装未知应用」权限。
+      // 系统拒绝时不会抛出 JS 异常，因此下载完成后主动引导。
+      Alert.alert(
+        '下载完成，准备安装',
+        '如果点击「安装」后提示无权限，请先点击「去设置」，为 JKVideo 开启「允许安装未知应用」，然后返回重试。',
+        [
+          { text: '去设置', onPress: openInstallSettings },
+          {
+            text: '安装',
+            onPress: () => {
+              triggerInstall(localUri).catch((e: any) => {
+                Alert.alert('安装失败', e?.message ?? '请在设置中开启「安装未知应用」权限后重试');
+              });
+            },
+          },
+        ]
+      );
+    } catch (e: any) {
+      setDownloadProgress(null);
+      Alert.alert('下载失败', e?.message ?? '请稍后重试');
+    }
+  };
+
+  return { currentVersion, isChecking, downloadProgress, checkUpdate };
+}
