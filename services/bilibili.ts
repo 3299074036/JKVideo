@@ -616,11 +616,13 @@ export async function getLiveDanmakuHistory(roomId: number): Promise<{
   return { danmakus, adminMsgs };
 }
 
-/** 当前分 P 的在线观看人数（/x/player/online/total），失败返回 0 */
+/** 当前分 P 的在线观看人数（/x/player/online/total），失败返回 0。
+ * 注意：接口返回的 total 是字符串（如 "114"），必须用 parseCount 转数字，
+ * 否则 formatCount 会因 Number.isFinite 校验失败而永远显示 0。 */
 export async function getOnlineCount(bvid: string, cid: number): Promise<number> {
   try {
     const res = await api.get('/x/player/online/total', { params: { bvid, cid } });
-    return res.data?.data?.total ?? 0;
+    return parseCount(res.data?.data?.total);
   } catch {
     return 0;
   }
