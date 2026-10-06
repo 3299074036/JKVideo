@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState, useCallback, memo } from 'react';
+import React, { useRef, useEffect, useState, useCallback, useMemo, memo } from 'react';
 import { View, Animated, StyleSheet } from 'react-native';
 import { DanmakuItem } from '../services/types';
 import { danmakuColorToCss } from '../utils/danmaku';
@@ -47,6 +47,18 @@ interface ActiveDanmaku {
   opacity: Animated.Value;
 }
 
+// 二分：在按 time 升序的数组中找到第一个 time >= t 的下标
+function lowerBoundByTime(arr: DanmakuItem[], t: number): number {
+  let lo = 0;
+  let hi = arr.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    if (arr[mid].time < t) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
 // ─── 单条弹幕 ──────────────────────────────────────────────────────────────
 // React.memo：新弹幕加入触发父级 re-render 时，旧弹幕不会重新走 JSX。
 // 由于 Animated.Value 的引用稳定、其他 props 也都是值类型，自然能命中浅比较。
@@ -60,6 +72,7 @@ const DanmakuLine = memo(
   }) {
     const isScrolling = d.item.mode === 1;
     const isTop = d.item.mode === 5;
+    const isBottom = d.item.mode === 4;
     return (
       <Animated.Text
         style={{
@@ -68,6 +81,8 @@ const DanmakuLine = memo(
             ? 16 + d.lane * LANE_H
             : isTop
             ? 16
+            : isBottom && d.lane >= 0
+            ? screenHeight - 36 - d.lane * LANE_H // 底部弹幕从下往上按车道堆叠
             : screenHeight - 36,
           left: isScrolling ? 0 : undefined,
           alignSelf: !isScrolling ? 'center' : undefined,
@@ -98,6 +113,9 @@ export default function DanmakuOverlay({
 }: Props) {
   const [activeDanmakus, setActiveDanmakus] = useState<ActiveDanmaku[]>([]);
   const laneAvailAt = useRef<number[]>(new Array(LANE_COUNT).fill(0));
+  // 底部弹幕（mode=4）车道：从下往上堆叠，避免固定同一 Y 坐标互相重叠
+  const BOTTOM_LANE_COUNT = 4;
+  const bottomLaneAvailAt = useRef<number[]>(new Array(BOTTOM_LANE_COUNT).fill(0));
   const activated = useRef<Set<string>>(new Set());
   const prevTimeRef = useRef<number>(currentTime);
   const idCounter = useRef(0);
@@ -108,6 +126,13 @@ export default function DanmakuOverlay({
     };
   }, []);
 
+  // 按 time 建索引：每 tick 用二分定位当前窗口，避免全量 filter
+  const sortedDanmakus = useMemo(() => {
+    const arr = [...danmakus];
+    arr.sort((a, b) => a.time - b.time);
+    return arr;
+  }, [danmakus]);
+
   const pickLane = useCallback((): number | null => {
     const now = Date.now();
     for (let i = 0; i < LANE_COUNT; i++) {
@@ -116,9 +141,18 @@ export default function DanmakuOverlay({
     return null;
   }, []);
 
+  const pickBottomLane = useCallback((): number | null => {
+    const now = Date.now();
+    for (let i = 0; i < BOTTOM_LANE_COUNT; i++) {
+      if (bottomLaneAvailAt.current[i] <= now) return i;
+    }
+    return null;
+  }, []);
+
   useEffect(() => {
     activated.current.clear();
     laneAvailAt.current.fill(0);
+    bottomLaneAvailAt.current.fill(0);
     setActiveDanmakus([]);
   }, [danmakus]);
 
@@ -132,19 +166,23 @@ export default function DanmakuOverlay({
     if (didSeek) {
       activated.current.clear();
       laneAvailAt.current.fill(0);
+      bottomLaneAvailAt.current.fill(0);
       setActiveDanmakus([]);
       return;
     }
 
     const window = 0.4;
-    const candidates = danmakus.filter((d) => {
+    // 二分定位窗口 [currentTime - window, currentTime + window]，只遍历窗口内弹幕
+    const lo = currentTime - window;
+    const hi = currentTime + window;
+    const candidates: DanmakuItem[] = [];
+    const startIdx = lowerBoundByTime(sortedDanmakus, lo);
+    for (let i = startIdx; i < sortedDanmakus.length; i++) {
+      const d = sortedDanmakus[i];
+      if (d.time > hi) break;
       const key = `${d.time}_${d.text}`;
-      return (
-        d.time >= currentTime - window &&
-        d.time <= currentTime + window &&
-        !activated.current.has(key)
-      );
-    });
+      if (!activated.current.has(key)) candidates.push(d);
+    }
 
     if (candidates.length === 0) return;
 
@@ -212,12 +250,22 @@ export default function DanmakuOverlay({
         ]).start();
       } else {
         // 固定位置（4=底, 5=顶）
+        const isBottom = item.mode === 4;
+        let lane = -1;
+        if (isBottom) {
+          // 底部弹幕也分配车道（从下往上堆叠），无空闲车道时跳过以免重叠
+          const bl = pickBottomLane();
+          if (bl === null) continue;
+          lane = bl;
+          // 固定弹幕约 2.2s 展示 + 0.4s 淡出，之后释放车道
+          bottomLaneAvailAt.current[bl] = Date.now() + 2600;
+        }
         const opacity = new Animated.Value(0);
         const id = `d_${idCounter.current++}`;
         newItems.push({
           id,
           item,
-          lane: -1,
+          lane,
           fontSize,
           tx: new Animated.Value(0),
           opacity,
@@ -249,7 +297,7 @@ export default function DanmakuOverlay({
         return combined.slice(Math.max(0, combined.length - MAX_ACTIVE));
       });
     }
-  }, [currentTime, visible, danmakus, pickLane, screenWidth]);
+  }, [currentTime, visible, sortedDanmakus, pickLane, pickBottomLane, screenWidth]);
 
   if (!visible) return null;
 

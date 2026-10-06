@@ -5,15 +5,16 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  Image,
   ActivityIndicator,
   Animated,
   ScrollView,
 } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
+import * as FileSystem from 'expo-file-system/legacy';
 import { Ionicons } from '@expo/vector-icons';
+import QRCode from 'react-native-qrcode-svg';
 import { DownloadTask } from '../store/downloadStore';
-import { startLanServer, stopLanServer, buildVideoUrl } from '../utils/lanServer';
+import { startLanServer, stopLanServer } from '../utils/lanServer';
 
 interface Props {
   visible: boolean;
@@ -23,7 +24,6 @@ interface Props {
 
 export function LanShareModal({ visible, task, onClose }: Props) {
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
-  const [qrImageLoaded, setQrImageLoaded] = useState(false);
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
   const slideY = useRef(new Animated.Value(400)).current;
@@ -39,11 +39,12 @@ export function LanShareModal({ visible, task, onClose }: Props) {
   useEffect(() => {
     if (!visible || !task) return;
     setVideoUrl(null);
-    setQrImageLoaded(false);
     setLoading(true);
-    startLanServer()
-    .then((baseUrl) => {
-        setVideoUrl(buildVideoUrl(baseUrl, task.bvid, task.qn));
+    // 只分享单个文件：源取下载任务的本地路径，serve 侧拷到隔离临时目录并加随机 token
+    const srcUri = task.localUri ?? `${FileSystem.documentDirectory}${task.bvid}_${task.qn}.mp4`;
+    startLanServer(srcUri, `${task.bvid}_${task.qn}.mp4`)
+      .then((url) => {
+        setVideoUrl(url);
       })
       .catch(() => setVideoUrl(null))
       .finally(() => setLoading(false));
@@ -65,10 +66,6 @@ export function LanShareModal({ visible, task, onClose }: Props) {
     onClose();
   }
 
-  const qrSrc = videoUrl
-    ? `https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(videoUrl)}&size=400x400`
-    : null;
-
   return (
     <Modal visible={visible} transparent animationType="none" onRequestClose={handleClose}>
       <View style={styles.overlay} pointerEvents="box-none" />
@@ -84,19 +81,10 @@ export function LanShareModal({ visible, task, onClose }: Props) {
 
           {loading ? (
             <ActivityIndicator size="large" color="#00AEEC" style={styles.loader} />
-          ) : qrSrc ? (
+          ) : videoUrl ? (
             <>
               <View style={styles.qrWrapper}>
-                <Image
-                  source={{ uri: qrSrc }}
-                  style={styles.qr}
-                  onLoad={() => setQrImageLoaded(true)}
-                />
-                {!qrImageLoaded && (
-                  <View style={styles.qrLoader}>
-                    <ActivityIndicator size="large" color="#00AEEC" />
-                  </View>
-                )}
+                <QRCode value={videoUrl} size={200} />
               </View>
 
               <TouchableOpacity style={styles.urlRow} onPress={handleCopy} activeOpacity={0.7}>

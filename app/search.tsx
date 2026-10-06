@@ -1,4 +1,4 @@
-import React, { useRef, useCallback } from 'react';
+import React, { useRef, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -23,6 +23,28 @@ const SORT_OPTIONS: { key: SearchSort; label: string }[] = [
   { key: 'pubdate', label: '最新发布' },
   { key: 'view', label: '最多播放' },
 ];
+
+type SearchRow = { left: VideoItem; right?: VideoItem };
+
+// 组件外定义：避免每 render 新建组件类型导致空态视图 unmount/remount
+function SearchListEmpty({ loading, hasKeyword, emptyColor }: {
+  loading: boolean;
+  hasKeyword: boolean;
+  emptyColor: string;
+}) {
+  if (loading) return (
+    <View style={styles.emptyBox}>
+      <ActivityIndicator color="#00AEEC" size="large" />
+    </View>
+  );
+  if (!hasKeyword) return null;
+  return (
+    <View style={styles.emptyBox}>
+      <Ionicons name="search-outline" size={48} color="#ddd" />
+      <Text style={[styles.emptyText, { color: emptyColor }]}>没有找到相关视频</Text>
+    </View>
+  );
+}
 
 export default function SearchScreen() {
   const router = useRouter();
@@ -55,36 +77,41 @@ export default function SearchScreen() {
     search(value, true);
   }, [search, setKeyword]);
 
+  // 搜索结果配对成双列行：renderItem 不再依赖 results，避免每次翻页整列表重渲染
+  const rows = useMemo<SearchRow[]>(() => {
+    const result: SearchRow[] = [];
+    for (let i = 0; i < results.length; i += 2) {
+      result.push({ left: results[i], right: results[i + 1] });
+    }
+    return result;
+  }, [results]);
+
   const renderItem = useCallback(
-    ({ item, index }: { item: VideoItem; index: number }) => {
-      if (index % 2 !== 0) return null;
-      const right = results[index + 1];
-      return (
-        <View style={styles.row}>
-          <View style={styles.leftCol}>
+    ({ item }: { item: SearchRow }) => (
+      <View style={styles.row}>
+        <View style={styles.leftCol}>
+          <VideoCard
+            item={item.left}
+            onPress={() => router.push(`/video/${item.left.bvid}` as any)}
+          />
+        </View>
+        {item.right ? (
+          <View style={styles.rightCol}>
             <VideoCard
-              item={item}
-              onPress={() => router.push(`/video/${item.bvid}` as any)}
+              item={item.right}
+              onPress={() => router.push(`/video/${item.right!.bvid}` as any)}
             />
           </View>
-          {right ? (
-            <View style={styles.rightCol}>
-              <VideoCard
-                item={right}
-                onPress={() => router.push(`/video/${right.bvid}` as any)}
-              />
-            </View>
-          ) : (
-            <View style={styles.rightCol} />
-          )}
-        </View>
-      );
-    },
-    [results, router],
+        ) : (
+          <View style={styles.rightCol} />
+        )}
+      </View>
+    ),
+    [router],
   );
 
   const keyExtractor = useCallback(
-    (_: VideoItem, index: number) => String(index),
+    (_: SearchRow, index: number) => String(index),
     [],
   );
 
@@ -111,21 +138,6 @@ export default function SearchScreen() {
       </View>
     );
   }, [hasResults, sort, changeSort, theme.card]);
-
-  const ListEmptyComponent = () => {
-    if (loading) return (
-      <View style={styles.emptyBox}>
-        <ActivityIndicator color="#00AEEC" size="large" />
-      </View>
-    );
-    if (!keyword.trim()) return null;
-    return (
-      <View style={styles.emptyBox}>
-        <Ionicons name="search-outline" size={48} color="#ddd" />
-        <Text style={[styles.emptyText, { color: theme.textSub }]}>没有找到相关视频</Text>
-      </View>
-    );
-  };
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: theme.bg }]} edges={['top', 'left', 'right']}>
@@ -239,14 +251,20 @@ export default function SearchScreen() {
       ) : (
         /* Results list */
         <FlatList
-          data={results}
+          data={rows}
           keyExtractor={keyExtractor}
           renderItem={renderItem}
           contentContainerStyle={styles.listContent}
           onEndReached={loadMore}
           onEndReachedThreshold={0.5}
           ListHeaderComponent={<ListHeaderComponent />}
-          ListEmptyComponent={<ListEmptyComponent />}
+          ListEmptyComponent={
+            <SearchListEmpty
+              loading={loading}
+              hasKeyword={keyword.trim().length > 0}
+              emptyColor={theme.textSub}
+            />
+          }
           ListFooterComponent={
             loading && results.length > 0 ? (
               <View style={styles.footer}>

@@ -13,8 +13,12 @@ function getMixinKey(imgKey: string, subKey: string): string {
   return MIXIN_KEY_ENC_TAB.slice(0, 32).map(i => raw[i]).join('');
 }
 
-// Minimal MD5 implementation (no dependencies)
+// Minimal MD5 implementation (no dependencies).
+// NOTE: MD5 operates on bytes; the input string is first encoded as UTF-8
+// (via unescape(encodeURIComponent(s))) so non-ASCII input (e.g. Chinese
+// search keywords) hashes correctly per the WBI spec.
 function md5(input: string): string {
+  input = unescape(encodeURIComponent(input));
   function safeAdd(x: number, y: number) { const lsw=(x&0xffff)+(y&0xffff); const msw=(x>>16)+(y>>16)+(lsw>>16); return (msw<<16)|(lsw&0xffff); }
   function bitRotateLeft(num: number, cnt: number) { return (num<<cnt)|(num>>>(32-cnt)); }
   function md5cmn(q:number,a:number,b:number,x:number,s:number,t:number){return safeAdd(bitRotateLeft(safeAdd(safeAdd(a,q),safeAdd(x,t)),s),b);}
@@ -24,8 +28,7 @@ function md5(input: string): string {
   function md5ii(a:number,b:number,c:number,d:number,x:number,s:number,t:number){return md5cmn(c^(b|~d),a,b,x,s,t);}
 
   function md5blks(s: string): number[] {
-    const nblk = ((s.length+8)>>6)+1;
-    const blks = new Array(nblk*16).fill(0);
+    const nblk = ((s.length+8)>>6)+1;    const blks = new Array(nblk*16).fill(0);
     for(let i=0;i<s.length;i++) blks[i>>2]|=s.charCodeAt(i)<<((i%4)*8);
     blks[s.length>>2]|=0x80<<((s.length%4)*8);
     blks[nblk*16-2]=s.length*8;
@@ -70,7 +73,10 @@ export function signWbi(
   const query = Object.keys(all)
     .sort()
     .map(k => {
-      const v = String(all[k]).replace(/[!'()*]/g, '');
+      // 与官方 urlencode 对齐：过滤 !'()* 后做 percent-encoding。
+      // 空格按官方转成 '+'（encodeURIComponent 默认转 %20，需替换）。
+      // 未编码的 value 含 '&'/'=' 会破坏 query 结构导致验签失败。
+      const v = encodeURIComponent(String(all[k]).replace(/[!'()*]/g, '')).replace(/%20/g, '+');
       return `${k}=${v}`;
     })
     .join('&');

@@ -16,7 +16,6 @@
       "channel": "production",
       "env": {
         "EXPO_PUBLIC_APP_ENV": "production",
-        "SENTRY_AUTH_TOKEN": "***SENTRY_TOKEN_REVOKED***",
         "SENTRY_ORG": "your-org-slug",
         "SENTRY_PROJECT": "your-project-slug"
       }

@@ -161,6 +161,7 @@ export default function HomeScreen() {
     refreshing: liveRefreshing,
     load: liveLoad,
     refresh: liveRefresh,
+    hasMore: liveHasMore,
   } = useLiveList();
   const { isLoggedIn, face } = useAuthStore();
   const [showLogin, setShowLogin] = useState(false);
@@ -337,9 +338,7 @@ export default function HomeScreen() {
             ref={liveListRef as any}
             style={styles.listContainer}
             data={liveRows}
-            keyExtractor={(item: any, index: number) =>
-              `live-${index}-${item.left.roomid}-${item.right?.roomid ?? "empty"}`
-            }
+            keyExtractor={(item: any) => `live-${item.left.roomid}`}
             contentContainerStyle={{
               paddingTop: insets.top + NAV_H + 6,
               paddingBottom: insets.bottom + 16,
@@ -384,7 +383,9 @@ export default function HomeScreen() {
                 progressViewOffset={insets.top + NAV_H}
               />
             }
-            onEndReached={() => liveLoad()}
+            onEndReached={() => {
+              if (liveHasMore) liveLoad();
+            }}
             onEndReachedThreshold={1.5}
             ListFooterComponent={
               liveLoading ? (

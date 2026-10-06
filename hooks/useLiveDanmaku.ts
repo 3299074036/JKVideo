@@ -45,7 +45,8 @@ export function useLiveDanmaku(roomId: number): {
           return true;
         });
         if (newItems.length > 0) {
-          setDanmakus(prev => [...prev, ...newItems]);
+          // BUG-M-28: 裁剪只保留最近 200 条，避免数组无限增长
+          setDanmakus(prev => [...prev, ...newItems].slice(-200));
         }
 
         // 解析 admin 消息中的礼物

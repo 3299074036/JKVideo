@@ -114,7 +114,13 @@ const wss = new WsLib.Server({ server, path: '/bilibili-danmaku-ws' });
 wss.on('connection', (clientWs, req) => {
   const url    = new URL(req.url, `http://localhost:${PORT}`);
   const target = url.searchParams.get('host');
-  if (!target || !target.includes('bilibili.com')) {
+  // 白名单校验：只允许 bilibili.com 的子域名，防止 evilbilibili.com 这类绕过。
+  // 用 hostname 做 endsWith('.bilibili.com') 判断，兼容带端口/路径的合法目标。
+  let targetHost = '';
+  try {
+    targetHost = new URL(target).hostname.toLowerCase();
+  } catch {}
+  if (!target || !targetHost.endsWith('.bilibili.com')) {
     clientWs.close(4001, 'invalid target');
     return;
   }

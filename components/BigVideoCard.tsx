@@ -151,7 +151,7 @@ export const BigVideoCard = React.memo(function BigVideoCard({
     return () => {
       cancelled = true;
     };
-  }, [item.bvid]);
+  }, [item.bvid, trafficSaving, liveActive]);
 
   // Pause/resume based on visibility and scroll state
   useEffect(() => {

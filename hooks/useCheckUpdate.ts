@@ -1,10 +1,10 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Alert, Linking, Platform } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as IntentLauncher from 'expo-intent-launcher';
 import Constants from 'expo-constants';
 
-const GITHUB_API = 'https://api.github.com/repos/tiajinsha/JKVideo/releases/latest';
+const GITHUB_API = 'https://api.github.com/repos/3299074036/JKVideo/releases/latest';
 
 function compareVersions(a: string, b: string): number {
   const pa = a.replace(/^v/, '').split('.').map(Number);
@@ -20,23 +20,33 @@ export function useCheckUpdate() {
   const currentVersion = Constants.expoConfig?.version ?? '0.0.0';
   const [isChecking, setIsChecking] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState<number | null>(null);
+  // BUG-L-29: 检查中标记。必须用 ref：state 在快速连点时闭包过期，
+  // 第二次点击仍看到旧的 false，挡不住并发；ref 同步更新才可靠
+  const checkingRef = useRef(false);
 
   const checkUpdate = async () => {
+    if (checkingRef.current) return;
+    checkingRef.current = true;
     setIsChecking(true);
     try {
       const res = await fetch(GITHUB_API, {
         headers: { Accept: 'application/vnd.github+json' },
       });
-      if (!res.ok) throw new Error(`GitHub API ${res.status}`);
+      // 该仓库是私有的，无鉴权请求会 404：任何非 200 / 解析失败都静默跳过，
+      // 绝不误报"发现新版本"，也不用报错打扰用户。
+      if (!res.ok) return;
       const data = await res.json();
 
       const latestVersion: string = data.tag_name ?? '';
-      const apkAsset = (data.assets as any[]).find((a) =>
+      if (!latestVersion) return;
+      const assets: any[] = Array.isArray(data.assets) ? data.assets : [];
+      const apkAsset = assets.find((a) =>
         (a.name as string).endsWith('.apk')
       );
       const downloadUrl: string = apkAsset?.browser_download_url ?? '';
       const releaseNotes: string = data.body ?? '';
 
+      if (!downloadUrl) return;
       if (compareVersions(latestVersion, currentVersion) <= 0) {
         Alert.alert('已是最新版本', `当前版本 v${currentVersion} 已是最新`);
         return;
@@ -57,9 +67,10 @@ export function useCheckUpdate() {
           },
         ]
       );
-    } catch (e: any) {
-      Alert.alert('检查失败', e?.message ?? '网络错误，请稍后重试');
+    } catch {
+      // 网络/解析失败：静默跳过
     } finally {
+      checkingRef.current = false;
       setIsChecking(false);
     }
   };

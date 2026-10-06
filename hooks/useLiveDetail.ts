@@ -58,8 +58,11 @@ export function useLiveDetail(roomId: number) {
   }, [roomId]);
 
   const changeQuality = useCallback(async (qn: number) => {
+    const reqRoomId = roomId;
     try {
-      const stream = await getLiveStreamUrl(roomId, qn);
+      const stream = await getLiveStreamUrl(reqRoomId, qn);
+      // BUG-L-28: 复用主 effect 的 latestRoomId 模式，roomId 已变则丢弃旧响应
+      if (latestRoomId.current !== reqRoomId) return;
       setState(prev => ({ ...prev, stream: { ...stream, qn } }));
     } catch { /* ignore */ }
   }, [roomId]);

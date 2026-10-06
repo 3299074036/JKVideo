@@ -41,21 +41,30 @@ export default function FollowingsScreen() {
   const loadingRef = useRef(false);
   const selTagRef = useRef<SelTag>(null);
   selTagRef.current = selTag;
+  // 请求序号：reset 请求抢占时，旧请求的迟到响应被丢弃
+  const reqSeqRef = useRef(0);
 
   const load = useCallback(async (pn: number, reset = false) => {
-    if (!uid || loadingRef.current) return;
+    if (!uid) return;
+    // 非 reset 请求仍走互斥锁；reset 请求抢占（序号递增使在飞旧响应被丢弃）
+    if (!reset && loadingRef.current) return;
+    const seq = ++reqSeqRef.current;
     const tag = selTagRef.current;
     loadingRef.current = true;
     if (reset) setRefreshing(true); else setLoading(true);
     try {
       if (tag == null) {
         const r = await getFollowings(Number(uid), pn, PAGE_SIZE);
+        if (seq !== reqSeqRef.current) return; // 已被更新的请求抢占，丢弃旧响应
+        if (selTagRef.current !== tag) return; // 分组已切换，丢弃旧分组的响应
         setUsers((prev) => (reset ? r.items : [...prev, ...r.items]));
         setTotal(r.total);
         setHasMore(pn * PAGE_SIZE < r.total);
         setPage(pn);
       } else {
         const r = await getTagFollowings(tag, pn, PAGE_SIZE);
+        if (seq !== reqSeqRef.current) return; // 已被更新的请求抢占，丢弃旧响应
+        if (selTagRef.current !== tag) return; // 分组已切换，丢弃旧分组的响应
         setUsers((prev) => (reset ? r.items : [...prev, ...r.items]));
         setTotal(0);
         setHasMore(r.hasMore);
@@ -63,9 +72,12 @@ export default function FollowingsScreen() {
       }
     } catch {}
     finally {
-      loadingRef.current = false;
-      setLoading(false);
-      setRefreshing(false);
+      // 只有最新请求释放锁，避免旧请求把新请求的 loading 状态清掉
+      if (seq === reqSeqRef.current) {
+        loadingRef.current = false;
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
   }, [uid]);
 

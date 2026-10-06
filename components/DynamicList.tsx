@@ -59,27 +59,42 @@ export const DynamicList = forwardRef<DynamicListHandle, Props>(
     const [error, setError] = useState("");
     const loadingRef = useRef(false);
     const listRef = useRef<FlatList>(null);
+    // 请求序号：reset 类请求每次递增抢占，过期响应直接丢弃（修复快速切换筛选的竞态）
+    const reqTokenRef = useRef(0);
 
     const load = useCallback(
       async (reset = false, curOffset = offset, curHasMore = hasMore) => {
-        if (!isLoggedIn || loadingRef.current) return;
+        if (!isLoggedIn) return;
         if (!reset && !curHasMore) return;
-        loadingRef.current = true;
+        // 翻页请求互斥（防并发重复追加）；reset 请求不受限、直接抢占
+        if (!reset && loadingRef.current) return;
+        let token: number;
+        if (reset) {
+          token = ++reqTokenRef.current;
+        } else {
+          loadingRef.current = true;
+          token = reqTokenRef.current;
+        }
         if (reset) setRefreshing(true);
         else setLoading(true);
         setError("");
         try {
           const r = await getDynamicFeed(reset ? "" : curOffset, dynFilter === "video" ? "video" : "all");
+          if (reqTokenRef.current !== token) return; // 已被更新的请求抢占，丢弃
           const filtered = dynFilter === "text" ? r.items.filter((it) => it.type !== "av") : r.items;
           setItems((prev) => (reset ? filtered : [...prev, ...filtered]));
           setOffset(r.offset);
           setHasMore(r.hasMore);
         } catch (e: any) {
+          if (reqTokenRef.current !== token) return; // 已被更新的请求抢占，丢弃
           setError(e?.message || "加载失败");
         } finally {
-          loadingRef.current = false;
-          setLoading(false);
-          setRefreshing(false);
+          // 各自清理自己设置的 loading 指示，避免卡死
+          if (reset) setRefreshing(false);
+          else {
+            loadingRef.current = false;
+            setLoading(false);
+          }
         }
       },
       [isLoggedIn, offset, hasMore, dynFilter],

@@ -13,6 +13,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useLiveDetail } from "../../hooks/useLiveDetail";
 import { useLiveDanmaku } from "../../hooks/useLiveDanmaku";
+import { useFollow } from "../../hooks/useFollow";
 import { LivePlayer } from "../../components/LivePlayer";
 import DanmakuList from "../../components/DanmakuList";
 import { formatCount } from "../../utils/format";
@@ -47,6 +48,8 @@ export default function LiveDetailScreen() {
 
   const actualRoomId = room?.roomid ?? id;
   const { danmakus, giftCounts } = useLiveDanmaku(isLive ? actualRoomId : 0);
+  // 主播关注按钮：之前是无 onPress 的死按钮，这里接 useFollow（anchor.uid 即主播 mid）
+  const { toggle: toggleAnchorFollow } = useFollow(anchor?.uid);
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: theme.card }]}>
@@ -159,7 +162,7 @@ export default function LiveDetailScreen() {
                   style={styles.avatar}
                 />
                 <Text style={[styles.anchorName, { color: theme.text }]}>{anchor.uname}</Text>
-                <TouchableOpacity style={styles.followBtn}>
+                <TouchableOpacity style={styles.followBtn} onPress={toggleAnchorFollow}>
                   <Text style={styles.followTxt}>+ 关注</Text>
                 </TouchableOpacity>
               </View>

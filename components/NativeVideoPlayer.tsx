@@ -4,7 +4,6 @@ import React, {
   useEffect,
   useCallback,
   forwardRef,
-  useImperativeHandle,
 } from "react";
 import { formatCount, formatDuration } from "../utils/format";
 import {
@@ -18,6 +17,7 @@ import {
   PanResponder,
   ActivityIndicator,
   Animated,
+  AppState,
   useWindowDimensions,
   ScrollView,
 } from "react-native";
@@ -77,6 +77,9 @@ export interface VideoPageInfo {
   duration?: number;
 }
 
+// 填充模式：contain 适应屏幕 / cover 等比裁切铺满 / stretch 拉伸铺满
+export type ResizeMode = "contain" | "cover" | "stretch";
+
 interface Props {
   playData: PlayUrlResponse | null;
   qualities: { qn: number; desc: string }[];
@@ -90,7 +93,19 @@ interface Props {
   isFullscreen?: boolean;
   onTimeUpdate?: (t: number) => void;
   initialTime?: number;
-  forcePaused?: boolean;
+  /** 以下播放控制状态由外层 VideoPlayer 持有（进/退全屏时保持一致） */
+  paused: boolean;
+  onPausedChange: (v: boolean) => void;
+  rate: number;
+  onRateChange: (r: number) => void;
+  volume: number;
+  onVolumeChange: (v: number) => void;
+  showDanmaku: boolean;
+  onShowDanmakuChange: (v: boolean) => void;
+  resizeMode: ResizeMode;
+  onResizeModeChange: (m: ResizeMode) => void;
+  locked: boolean;
+  onLockedChange: (v: boolean) => void;
   /** 点击播放器右上角"弹幕列表"图标，由外层打开 Sheet。仅在小窗口生效。 */
   onDanmakuListPress?: () => void;
   /** 点击播放器左上角返回箭头，跟随播放器控制栏一起显隐。仅在小窗口生效。 */
@@ -129,7 +144,18 @@ export const NativeVideoPlayer = forwardRef<NativeVideoPlayerRef, Props>(
       isFullscreen,
       onTimeUpdate,
       initialTime,
-      forcePaused,
+      paused,
+      onPausedChange,
+      rate,
+      onRateChange,
+      volume,
+      onVolumeChange,
+      showDanmaku,
+      onShowDanmakuChange,
+      resizeMode,
+      onResizeModeChange,
+      locked,
+      onLockedChange,
       onDanmakuListPress,
       onBack,
       coverUrl,
@@ -150,6 +176,10 @@ export const NativeVideoPlayer = forwardRef<NativeVideoPlayerRef, Props>(
     const { width: SCREEN_W, height: SCREEN_H } = useWindowDimensions();
     const VIDEO_H = SCREEN_W * 0.5625;
     const theme = useTheme();
+    // BUG-H-02：只创建一次的 PanResponder 闭包不能直接读 SCREEN_W/SCREEN_H（转屏后过期），
+    // 宽高存入每渲染更新的 ref，手势闭包统一读 dimRef
+    const dimRef = useRef({ w: SCREEN_W, h: SCREEN_H });
+    dimRef.current = { w: SCREEN_W, h: SCREEN_H };
 
     const [resolvedUrl, setResolvedUrl] = useState<string | undefined>();
     const isDash = !!playData?.dash;
@@ -163,7 +193,8 @@ export const NativeVideoPlayer = forwardRef<NativeVideoPlayerRef, Props>(
     const [showControls, setShowControls] = useState(true);
     const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-    const [paused, setPaused] = useState(false);
+    // 播放控制状态（paused/rate/volume/showDanmaku/resizeMode/locked）由外层 VideoPlayer
+    // 以 props 传入，竖屏/全屏两个实例共享，进/退全屏时保持一致
     // seek 后强制触发 react-native-video 重新评估 paused prop 的 hack 用的瞬时叠加态
     // 单独存储以避免污染 paused（用于图标显示）：seek 完成的一瞬间不让"播放/暂停"图标闪
     const [seekHackPaused, setSeekHackPaused] = useState(false);
@@ -176,7 +207,6 @@ export const NativeVideoPlayer = forwardRef<NativeVideoPlayerRef, Props>(
     const [showQuality, setShowQuality] = useState(false);
     // 倍速
     const RATE_OPTIONS = [0.75, 1, 1.25, 1.5, 2];
-    const [rate, setRate] = useState(1);
     const [showRate, setShowRate] = useState(false);
 
     // 清晰度切换：保留进度 + loading 遮罩
@@ -244,15 +274,14 @@ export const NativeVideoPlayer = forwardRef<NativeVideoPlayerRef, Props>(
     const barOffsetX = useRef(0);
     const barWidthRef = useRef(300);
     const trackRef = useRef<View>(null);
+    // BUG-H-01：onPanResponderRelease 的 gs.moveX 在无 move 事件时无效（恒为 0），
+    // 点按无拖动会 seek 到 0:00。这里记录 grant/move 的最后一次有效 x，release 用它兜底
+    const lastSeekXRef = useRef(0);
     // 让稳定的 PanResponder 闭包能读到最新 shots
     const shotsRef = useRef<VideoShotData | null>(null);
 
     const [shots, setShots] = useState<VideoShotData | null>(null);
-    const [showDanmaku, setShowDanmaku] = useState(true);
 
-    // 填充模式：contain 适应屏幕 / cover 等比裁切铺满 / stretch 拉伸铺满
-    type ResizeMode = "contain" | "cover" | "stretch";
-    const [resizeMode, setResizeMode] = useState<ResizeMode>("contain");
     const [showResize, setShowResize] = useState(false);
     const RESIZE_OPTIONS: { mode: ResizeMode; label: string }[] = [
       { mode: "contain", label: "适应屏幕" },
@@ -267,12 +296,17 @@ export const NativeVideoPlayer = forwardRef<NativeVideoPlayerRef, Props>(
     };
 
     // 全屏锁定：锁定后禁用手势和控制栏，只留解锁键
-    const [locked, setLocked] = useState(false);
-    const lockedRef = useRef(false);
+    // locked 由 props 传入，lockedRef 供只创建一次的手势闭包读取，每渲染同步
+    const lockedRef = useRef(locked);
+    useEffect(() => {
+      lockedRef.current = locked;
+    }, [locked]);
 
-    // 播放器音量（手势调节用，0..1）
-    const [volume, setVolume] = useState(1);
-    const volumeRef = useRef(1);
+    // 播放器音量（手势调节用，0..1）：volume 由 props 传入，volumeRef 供手势闭包读取
+    const volumeRef = useRef(volume);
+    useEffect(() => {
+      volumeRef.current = volume;
+    }, [volume]);
 
     // 双击快进/快退指示
     const [seekFlash, setSeekFlash] = useState<{
@@ -290,39 +324,45 @@ export const NativeVideoPlayer = forwardRef<NativeVideoPlayerRef, Props>(
     // 亮度权限被拒时的提示（Android 需要"修改系统设置"权限）
     const [brightnessHint, setBrightnessHint] = useState(false);
     const brightDeniedRef = useRef(false);
+    const brightHintTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-    const videoRef = useRef<VideoRef>(null);
+    // BUG-M-08：onLoad 的 initialTime-seek 只在首次挂载执行一次；
+    // 切分 P 时 <Video> 因 key 变化重挂载会再次触发 onLoad，此时 initialTime 可能是旧分 P 的残留，
+    // 必须跳过，否则新分 P 开场会被 seek 到旧位置（清晰度切换走 pendingSeekRef 分支，不受影响）
+    const initialSeekDoneRef = useRef(false);
 
-    useImperativeHandle(ref, () => ({
-      seek: (t: number) => {
-        videoRef.current?.seek(t);
-      },
-      pause: () => setPaused(true),
-      resume: () => setPaused(false),
-      getCurrentTime: () => currentTimeRef.current,
-      setPaused: (v: boolean) => {
-        setPaused(v);
-      },
-    }));
+    // BUG-L-13：命令式 API（seek/pause/resume/getCurrentTime/setPaused）经核查无任何调用方，
+    // 已删除 useImperativeHandle；ref 透传保留以兼容 forwardRef 签名。
 
     const currentDesc =
       qualities.find((q) => q.qn === currentQn)?.desc ??
       String(currentQn || "HD");
 
     // 解析播放链接，dash 需要构建 mpd uri，普通链接直接取第一个 durl。使用 useEffect 监听 playData 和 currentQn 变化，确保每次切换视频或清晰度时都能正确更新播放链接。错误处理逻辑保证即使 dash mpd 构建失败也能回退到普通链接，提升兼容性。
+    // BUG-M-07：单调请求序号，只接受最新一次 resolve，旧的 in-flight promise  resolve 后直接丢弃
+    const mpdReqRef = useRef(0);
     useEffect(() => {
       if (!playData) {
+        mpdReqRef.current++;
         setResolvedUrl(undefined);
         return;
       }
       if (isDash) {
+        const reqId = ++mpdReqRef.current;
         buildDashMpdUri(playData, currentQn, bvid, cid)
-          .then(setResolvedUrl)
-          .catch(() => setResolvedUrl(playData.dash!.video[0]?.baseUrl));
+          .then((url) => {
+            if (mpdReqRef.current === reqId) setResolvedUrl(url);
+          })
+          .catch(() => {
+            if (mpdReqRef.current === reqId)
+              setResolvedUrl(playData.dash!.video[0]?.baseUrl);
+          });
       } else {
+        mpdReqRef.current++;
         setResolvedUrl(playData.durl?.[0]?.url);
       }
-    }, [playData, currentQn]);
+      // BUG-L-10：effect 内部用了 bvid/cid，补全依赖
+    }, [playData, currentQn, bvid, cid]);
     // 获取视频截图数据，供进度条预览使用。依赖 bvid 和 cid，确保在视频切换时重新获取截图。使用 cancelled 标志避免在组件卸载后更新状态，防止内存泄漏和潜在的错误。
     useEffect(() => {
       if (!bvid || !cid) return;
@@ -392,15 +432,14 @@ export const NativeVideoPlayer = forwardRef<NativeVideoPlayerRef, Props>(
     // 锁定/解锁切换：锁定后隐藏控制栏，只留右侧解锁键
     const toggleLock = useCallback(() => {
       const next = !lockedRef.current;
-      lockedRef.current = next;
-      setLocked(next);
+      onLockedChange(next);
       if (next) {
         if (hideTimer.current) clearTimeout(hideTimer.current);
         setShowControls(false);
       } else {
         showAndReset();
       }
-    }, [showAndReset]);
+    }, [showAndReset, onLockedChange]);
 
     // 组件卸载时清理隐藏计时器，避免内存泄漏和潜在的状态更新错误。依赖项为空数组确保只在挂载和卸载时执行一次。
     useEffect(() => {
@@ -409,8 +448,29 @@ export const NativeVideoPlayer = forwardRef<NativeVideoPlayerRef, Props>(
         if (hideTimer.current) clearTimeout(hideTimer.current);
         if (seekFlashTimer.current) clearTimeout(seekFlashTimer.current);
         if (singleTapTimer.current) clearTimeout(singleTapTimer.current);
+        if (brightHintTimer.current) clearTimeout(brightHintTimer.current);
       };
     }, []);
+
+    // BUG-M-09：切后台/锁屏自动暂停（记住切后台前是否在播），回前台恢复播放；
+    // 用户手动暂停的不恢复。原 forcePaused prop 无任何调用方传递，已删除死通道，改走内部监听。
+    const bgPausedRef = useRef(false);
+    useEffect(() => {
+      const sub = AppState.addEventListener("change", (state) => {
+        if (state === "background" || state === "inactive") {
+          if (!paused) {
+            bgPausedRef.current = true;
+            onPausedChange(true);
+          }
+        } else if (state === "active") {
+          if (bgPausedRef.current) {
+            bgPausedRef.current = false;
+            onPausedChange(false);
+          }
+        }
+      });
+      return () => sub.remove();
+    }, [paused, onPausedChange]);
 
     // 按 delta 秒快进/快退（双击手势用）
     const seekBy = useCallback((delta: number) => {
@@ -506,13 +566,13 @@ export const NativeVideoPlayer = forwardRef<NativeVideoPlayerRef, Props>(
             g.active = true;
             g.type =
               Math.abs(dy) > Math.abs(dx)
-                ? g.sx < SCREEN_W / 2
+                ? g.sx < dimRef.current.w / 2
                   ? "vl"
                   : "vr"
                 : "h";
           }
           if (g.type === "vl") {
-            const b = clamp(g.startB + (-dy / SCREEN_H) * 1.5, 0.01, 1);
+            const b = clamp(g.startB + (-dy / dimRef.current.h) * 1.5, 0.01, 1);
             Brightness.setBrightnessAsync(b)
               .then(() => setGestureOverlay({ kind: "brightness", value: b }))
               .catch(() => {
@@ -520,18 +580,19 @@ export const NativeVideoPlayer = forwardRef<NativeVideoPlayerRef, Props>(
                 if (!brightDeniedRef.current) {
                   brightDeniedRef.current = true;
                   setBrightnessHint(true);
-                  setTimeout(() => setBrightnessHint(false), 2500);
+                  // BUG-L-11：定时器存 ref，卸载时清理，避免已卸载组件 setState
+                  if (brightHintTimer.current) clearTimeout(brightHintTimer.current);
+                  brightHintTimer.current = setTimeout(() => setBrightnessHint(false), 2500);
                 }
               });
           } else if (g.type === "vr") {
-            const v = clamp(g.startV + (-dy / SCREEN_H) * 1.5, 0, 1);
-            volumeRef.current = v;
-            setVolume(v);
+            const v = clamp(g.startV + (-dy / dimRef.current.h) * 1.5, 0, 1);
+            onVolumeChange(v);
             setGestureOverlay({ kind: "volume", value: v });
           } else if (g.type === "h") {
             const dur = durationRef.current;
             if (dur <= 0) return;
-            const target = clamp(g.startT + (dx / SCREEN_W) * dur, 0, dur);
+            const target = clamp(g.startT + (dx / dimRef.current.w) * dur, 0, dur);
             g.hTarget = target;
             setGestureOverlay({
               kind: "seek",
@@ -604,6 +665,7 @@ export const NativeVideoPlayer = forwardRef<NativeVideoPlayerRef, Props>(
           setShowControls(true);
           if (hideTimer.current) clearTimeout(hideTimer.current);
           const x = clamp(gs.x0 - barOffsetX.current, 0, barWidthRef.current);
+          lastSeekXRef.current = x;
           touchAnimX.setValue(x);
           thumbThrottleRef.current = 0;
           updateThumbFrame(x);
@@ -614,6 +676,7 @@ export const NativeVideoPlayer = forwardRef<NativeVideoPlayerRef, Props>(
             0,
             barWidthRef.current,
           );
+          lastSeekXRef.current = x;
           // 关键：setValue 不触发 React 渲染，进度球/进度填充由原生层直接刷新
           touchAnimX.setValue(x);
           const now = Date.now();
@@ -623,9 +686,10 @@ export const NativeVideoPlayer = forwardRef<NativeVideoPlayerRef, Props>(
           }
         },
         // 用户松开拖动，或拖动被中断（如来电），都视为结束拖动
-        onPanResponderRelease: (_, gs) => {
+        onPanResponderRelease: () => {
+          // BUG-H-01：不用 gs.moveX（无 move 事件时无效为 0），用最后一次有效 x
           const x = clamp(
-            gs.moveX - barOffsetX.current,
+            lastSeekXRef.current,
             0,
             barWidthRef.current,
           );
@@ -774,7 +838,7 @@ export const NativeVideoPlayer = forwardRef<NativeVideoPlayerRef, Props>(
             style={StyleSheet.absoluteFill}
             resizeMode={resizeMode}
             controls={false}
-            paused={!!(forcePaused || paused || seekHackPaused)}
+            paused={!!(paused || seekHackPaused)}
             rate={rate}
             volume={volume}
             progressUpdateInterval={500}
@@ -812,10 +876,11 @@ export const NativeVideoPlayer = forwardRef<NativeVideoPlayerRef, Props>(
                 videoRef.current?.seek(pending);
                 pendingSeekRef.current = null;
                 didSeek = true;
-              } else if (initialTime && initialTime > 0) {
+              } else if (!initialSeekDoneRef.current && initialTime && initialTime > 0) {
                 videoRef.current?.seek(initialTime);
                 didSeek = true;
               }
+              initialSeekDoneRef.current = true;
               if (switching) {
                 setSwitching(false);
                 if (switchTimeoutRef.current) {
@@ -825,7 +890,7 @@ export const NativeVideoPlayer = forwardRef<NativeVideoPlayerRef, Props>(
               }
               // seek 后部分播放器不自动恢复播放，需短暂 paused→false 触发 prop 变化
               // 仅在确实 seek 时执行；走 seekHackPaused（不污染图标显示态），避免播放/暂停图标闪烁
-              if (didSeek && !forcePaused && !paused) {
+              if (didSeek && !paused) {
                 setSeekHackPaused(true);
                 requestAnimationFrame(() => setSeekHackPaused(false));
               }
@@ -981,7 +1046,7 @@ export const NativeVideoPlayer = forwardRef<NativeVideoPlayerRef, Props>(
             <TouchableOpacity
               style={styles.centerBtn}
               onPress={() => {
-                setPaused((p) => !p);
+                onPausedChange(!paused);
                 showAndReset();
               }}
             >
@@ -1015,7 +1080,7 @@ export const NativeVideoPlayer = forwardRef<NativeVideoPlayerRef, Props>(
                   <View style={styles.ctrlRow}>
                     <TouchableOpacity
                       onPress={() => {
-                        setPaused((p) => !p);
+                        onPausedChange(!paused);
                         showAndReset();
                       }}
                       style={styles.ctrlBtn}
@@ -1063,7 +1128,7 @@ export const NativeVideoPlayer = forwardRef<NativeVideoPlayerRef, Props>(
                     <TouchableOpacity
                       style={styles.ctrlBtn}
                       onPress={() => {
-                        setShowDanmaku((v) => !v);
+                        onShowDanmakuChange(!showDanmaku);
                         showAndReset();
                       }}
                     >
@@ -1130,7 +1195,7 @@ export const NativeVideoPlayer = forwardRef<NativeVideoPlayerRef, Props>(
                   <View style={styles.ctrlRow}>
                     <TouchableOpacity
                       onPress={() => {
-                        setPaused((p) => !p);
+                        onPausedChange(!paused);
                         showAndReset();
                       }}
                       style={styles.ctrlBtn}
@@ -1290,7 +1355,7 @@ export const NativeVideoPlayer = forwardRef<NativeVideoPlayerRef, Props>(
                     { borderTopColor: theme.modalBorder },
                   ]}
                   onPress={() => {
-                    setResizeMode(o.mode);
+                    onResizeModeChange(o.mode);
                     setShowResize(false);
                     showAndReset();
                   }}
@@ -1363,7 +1428,7 @@ export const NativeVideoPlayer = forwardRef<NativeVideoPlayerRef, Props>(
                   key={r}
                   style={[styles.qualityItem, { borderTopColor: theme.modalBorder }]}
                   onPress={() => {
-                    setRate(r);
+                    onRateChange(r);
                     setShowRate(false);
                     showAndReset();
                   }}

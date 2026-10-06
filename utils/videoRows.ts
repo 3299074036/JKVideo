@@ -31,9 +31,7 @@ export function toListRows(pages: VideoItem[][]): ListRow[] {
 
     const pairs: NormalRow[] = [];
     for (let i = 0; i < rest.length; i += 2) {
-      if (rest[i + 1]) {
-        pairs.push({ type: 'pair', left: rest[i], right: rest[i + 1] ?? null });
-      }
+      pairs.push({ type: 'pair', left: rest[i], right: rest[i + 1] ?? null });
     }
 
     if (rows.length < 20) {

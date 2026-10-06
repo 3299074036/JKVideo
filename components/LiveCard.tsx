@@ -4,7 +4,7 @@ import {
   Text,
   TouchableOpacity,
   StyleSheet,
-  Dimensions,
+  useWindowDimensions,
 } from "react-native";
 import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
@@ -14,22 +14,15 @@ import { formatCount } from "../utils/format";
 import { proxyImageUrl } from "../utils/imageUrl";
 import { useTheme } from "../utils/theme";
 
-const { width } = Dimensions.get("window");
-const CARD_WIDTH = (width - 14) / 2;
-
-interface Props {
-  item: LiveRoom;
-  isLivePulse?: Boolean;
-  onPress?: () => void;
-  fullWidth?: boolean;
-}
-
 export const LiveCard = React.memo(function LiveCard({
   item,
   onPress,
   fullWidth,
   isLivePulse = false,
 }: Props) {
+  // 旋转后实时跟随当前窗口宽度（原模块顶层 Dimensions 快照会过期）
+  const { width } = useWindowDimensions();
+  const CARD_WIDTH = (width - 14) / 2;
   const cardWidth = fullWidth ? width - 8 : CARD_WIDTH;
   const theme = useTheme();
   return (
@@ -83,7 +76,6 @@ export const LiveCard = React.memo(function LiveCard({
 
 const styles = StyleSheet.create({
   card: {
-    width: CARD_WIDTH,
     marginBottom: 6,
     backgroundColor: "#fff",
     borderRadius: 6,
@@ -91,8 +83,6 @@ const styles = StyleSheet.create({
   },
   thumbContainer: { position: "relative" },
   thumb: {
-    width: CARD_WIDTH,
-    height: CARD_WIDTH * 0.5625,
     backgroundColor: "#ddd",
   },
   liveBadge: {

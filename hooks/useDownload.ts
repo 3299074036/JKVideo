@@ -1,5 +1,6 @@
 import * as FileSystem from 'expo-file-system/legacy';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useRef } from 'react';
 import { AppState } from 'react-native';
 import { useDownloadStore } from '../store/downloadStore';
 import { getPlayUrlForDownload } from '../services/bilibili';
@@ -37,6 +38,9 @@ async function readFileSize(uri: string): Promise<number | undefined> {
 
 export function useDownload() {
   const { tasks, addTask, updateTask, removeTask } = useDownloadStore();
+  // BUG-M-26: 在途下载的 resumable 引用——cancel 时 pauseAsync 才能真正中断下载；
+  // 用实例身份校验，避免旧 attempt 的迟到回调污染新任务的状态
+  const resumablesRef = useRef(new Map<string, FileSystem.DownloadResumable>());
 
   function taskKey(bvid: string, qn: number) { return `${bvid}_${qn}`; }
   function localPath(bvid: string, qn: number) {
@@ -103,6 +107,7 @@ export function useDownload() {
       };
 
       const resumable = FileSystem.createDownloadResumable(url, dest, { headers }, progressCallback);
+      resumablesRef.current.set(key, resumable);
 
       // 进入后台时主动暂停，抢在 OS 断连之前
       let bgPaused = false;
@@ -123,8 +128,12 @@ export function useDownload() {
           // 真实网络错误，非后台原因
           appStateSub.remove();
           delete lastReportedProgress[key];
-          const msg = e?.message ?? '下载失败';
-          updateTask(key, { status: 'error', error: msg.length > 40 ? msg.slice(0, 40) + '...' : msg });
+          // BUG-M-26: 只有当前仍是本次 attempt 才写回状态；
+          // 用户已取消（引用被删）或已重开新任务时不污染
+          if (resumablesRef.current.get(key) === resumable) {
+            const msg = e?.message ?? '下载失败';
+            updateTask(key, { status: 'error', error: msg.length > 40 ? msg.slice(0, 40) + '...' : msg });
+          }
           return 'error';
         }
         // 后台引发的中断，走下面的续传逻辑
@@ -137,6 +146,12 @@ export function useDownload() {
       if (!result?.uri) {
         // 等 App 回到前台
         if (isBackground()) await waitForActive();
+
+        // BUG-M-26: 用户已取消（引用被删）或已重开新任务：不再续传旧下载
+        if (resumablesRef.current.get(key) !== resumable) {
+          delete lastReportedProgress[key];
+          return 'error';
+        }
 
         // 尝试从断点续传
         try {
@@ -167,6 +182,8 @@ export function useDownload() {
       const msg = e?.message ?? '下载失败';
       updateTask(key, { status: 'error', error: msg.length > 40 ? msg.slice(0, 40) + '...' : msg });
       return 'error';
+    } finally {
+      resumablesRef.current.delete(key);
     }
   }
 
@@ -175,7 +192,16 @@ export function useDownload() {
   }
 
   function cancelDownload(bvid: string, qn: number) {
-    removeTask(taskKey(bvid, qn));
+    const key = taskKey(bvid, qn);
+    // BUG-M-26: 先拿引用再删——pauseAsync 真正中断在途的 downloadAsync()，
+    // 否则它会继续后台下载；同时清理进度上报记录
+    const resumable = resumablesRef.current.get(key);
+    resumablesRef.current.delete(key);
+    delete lastReportedProgress[key];
+    if (resumable) {
+      resumable.pauseAsync().catch(() => {});
+    }
+    removeTask(key);
   }
 
   return { tasks, startDownload, getLocalUri, cancelDownload, taskKey };

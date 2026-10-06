@@ -48,6 +48,11 @@ export default function CreatorScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const loadingRef = useRef(false);
   const scrollY = useRef(new Animated.Value(0)).current;
+  // 最新 mid 保鲜：loadVideos 响应返回时校验请求 mid 与当前 mid 是否一致
+  const midRef = useRef(mid);
+  midRef.current = mid;
+  // 请求序号：reset 请求抢占时，旧请求的迟到响应被丢弃
+  const reqSeqRef = useRef(0);
 
   const { following, loading: followLoading, toggle: toggleFollow, followToTags } = useFollow(mid);
   const [tagSheetVisible, setTagSheetVisible] = useState(false);
@@ -63,26 +68,42 @@ export default function CreatorScreen() {
   });
 
   useEffect(() => {
+    let cancelled = false;
     getUploaderInfo(mid)
-      .then(setInfo)
+      .then((data) => {
+        if (!cancelled) setInfo(data);
+      })
       .catch(() => {})
-      .finally(() => setInfoLoading(false));
+      .finally(() => {
+        if (!cancelled) setInfoLoading(false);
+      });
     loadVideos(1, true);
+    return () => {
+      cancelled = true;
+    };
   }, [mid]);
 
   const loadVideos = useCallback(async (pn: number, reset = false) => {
-    if (loadingRef.current) return;
+    // 非 reset 请求仍走互斥锁；reset 请求抢占（序号递增使在飞旧响应被丢弃）
+    if (!reset && loadingRef.current) return;
+    const seq = ++reqSeqRef.current;
+    const reqMid = mid;
     loadingRef.current = true;
     setLoading(true);
     try {
       const { videos: newVideos, total: t } = await getUploaderVideos(mid, pn, PAGE_SIZE);
+      if (seq !== reqSeqRef.current) return; // 已被更新的请求抢占，丢弃旧响应
+      if (reqMid !== midRef.current) return; // mid 已切换，丢弃旧 UP 主的响应
       setTotal(t);
       setVideos(prev => reset ? newVideos : [...prev, ...newVideos]);
       setPage(pn);
     } catch {}
     finally {
-      loadingRef.current = false;
-      setLoading(false);
+      // 只有最新请求释放锁，避免旧请求把新请求的 loading 状态清掉
+      if (seq === reqSeqRef.current) {
+        loadingRef.current = false;
+        setLoading(false);
+      }
     }
   }, [mid]);
 

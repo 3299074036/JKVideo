@@ -4,7 +4,7 @@ import {
   Text,
   TouchableOpacity,
   StyleSheet,
-  Dimensions,
+  useWindowDimensions,
 } from "react-native";
 import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
@@ -14,23 +14,18 @@ import { coverImageUrl } from "../utils/imageUrl";
 import { useSettingsStore } from "../store/settingsStore";
 import { useTheme } from "../utils/theme";
 
-const { width } = Dimensions.get("window");
-const CARD_WIDTH = (width - 14) / 2;
-
-interface Props {
-  item: VideoItem;
-  onPress: () => void;
-}
-
 export const VideoCard = React.memo(function VideoCard({
   item,
   onPress,
 }: Props) {
+  // 旋转后实时跟随当前窗口宽度（原模块顶层 Dimensions 快照会过期）
+  const { width } = useWindowDimensions();
+  const CARD_WIDTH = (width - 14) / 2;
   const trafficSaving = useSettingsStore((s) => s.trafficSaving);
   const theme = useTheme();
   return (
     <TouchableOpacity
-      style={[styles.card, { backgroundColor: theme.card }]}
+      style={[styles.card, { width: CARD_WIDTH, backgroundColor: theme.card }]}
       onPress={onPress}
       activeOpacity={0.85}
     >
@@ -39,7 +34,14 @@ export const VideoCard = React.memo(function VideoCard({
           source={{
             uri: coverImageUrl(item.pic, trafficSaving ? "normal" : "hd"),
           }}
-          style={[styles.thumb, { backgroundColor: theme.card }]}
+          style={[
+            styles.thumb,
+            {
+              width: CARD_WIDTH,
+              height: CARD_WIDTH * 0.5625,
+              backgroundColor: theme.card,
+            },
+          ]}
           contentFit="cover"
           transition={200}
           recyclingKey={item.bvid}
@@ -73,7 +75,6 @@ export const VideoCard = React.memo(function VideoCard({
 
 const styles = StyleSheet.create({
   card: {
-    width: CARD_WIDTH,
     marginBottom: 6,
     backgroundColor: "#fff",
     borderRadius: 10,
@@ -81,8 +82,6 @@ const styles = StyleSheet.create({
   },
   thumbContainer: { position: "relative" },
   thumb: {
-    width: CARD_WIDTH,
-    height: CARD_WIDTH * 0.5625,
     backgroundColor: "#ddd",
   },
   durationBadge: {

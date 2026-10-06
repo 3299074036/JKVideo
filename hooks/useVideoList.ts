@@ -9,13 +9,16 @@ export function useVideoList() {
 
   const loadingRef = useRef(false);
   const freshIdxRef = useRef(0);
+  const pendingResetRef = useRef(false); // BUG-M-18: 在飞时到达的 reset，结束后补执行
 
   const load = useCallback(async (reset = false) => {
     if (loadingRef.current) {
-      if (reset) setRefreshing(false);
+      // BUG-M-18: reset 不再静默丢弃——标记 pending，在飞请求结束后补执行一次
+      if (reset) pendingResetRef.current = true;
       return;
     }
     loadingRef.current = true;
+    pendingResetRef.current = false;
     const idx = freshIdxRef.current;
     setLoading(true);
     try {
@@ -28,6 +31,10 @@ export function useVideoList() {
       loadingRef.current = false;
       setLoading(false);
       setRefreshing(false);
+      if (pendingResetRef.current) {
+        pendingResetRef.current = false;
+        load(true); // 补执行下拉刷新
+      }
     }
   }, []);
 

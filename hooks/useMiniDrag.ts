@@ -20,13 +20,17 @@ export function useMiniDrag({ width, height, hitClose, onTap, onClose }: Options
   // 用 ref 保持最新回调，避免 PanResponder 闭包过期
   const cbRef = useRef({ onTap, onClose, hitClose });
   cbRef.current = { onTap, onClose, hitClose };
+  // BUG-L-31: width/height 同样放进 ref 保鲜，避免 release 里读到过期闭包
+  const sizeRef = useRef({ width, height });
+  sizeRef.current = { width, height };
 
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onPanResponderGrant: () => {
         isDragging.current = false;
-        pan.setOffset({ x: (pan.x as any)._value, y: (pan.y as any)._value });
+        // BUG-L-32: 用 __getValue() 读取当前值，不访问私有字段 _value
+        pan.setOffset({ x: (pan.x as any).__getValue(), y: (pan.y as any).__getValue() });
         pan.setValue({ x: 0, y: 0 });
       },
       onPanResponderMove: (_, gs) => {
@@ -49,12 +53,13 @@ export function useMiniDrag({ width, height, hitClose, onTap, onClose }: Options
           return;
         }
         const { width: sw, height: sh } = Dimensions.get('window');
-        const curX = (pan.x as any)._value;
-        const curY = (pan.y as any)._value;
+        const { width: w, height: h } = sizeRef.current;
+        const curX = (pan.x as any).__getValue();
+        const curY = (pan.y as any).__getValue();
         const snapRight = 0;
-        const snapLeft = -(sw - width - 24);
+        const snapLeft = -(sw - w - 24);
         const snapX = curX < snapLeft / 2 ? snapLeft : snapRight;
-        const clampedY = Math.max(-sh + height + 60, Math.min(60, curY));
+        const clampedY = Math.max(-sh + h + 60, Math.min(60, curY));
         Animated.spring(pan, {
           toValue: { x: snapX, y: clampedY },
           useNativeDriver: false,

@@ -20,12 +20,14 @@ export function useVideoDetail(bvid: string) {
   const qnRef = useRef<number>(0);
   const videoRef = useRef<VideoItem | null>(null);
   const pageIndexRef = useRef(0);
+  const pageReqIdRef = useRef(0); // BUG-M-10: 分 P 拉流请求序号，只接受最新请求的响应
   const isLoggedIn = useAuthStore(s => s.isLoggedIn);
   const trafficSaving = useSettingsStore(s => s.trafficSaving);
   const defaultQn = trafficSaving ? 16 : 126;
 
-  async function fetchPlayData(cid: number, qn: number, updateList = false) {
+  async function fetchPlayData(cid: number, qn: number, updateList = false, isStale?: () => boolean) {
     const data = await getPlayUrl(bvid, cid, qn);
+    if (isStale?.()) return; // 请求已过期：直接丢弃，不写回任何状态
     setPlayData(data);
     setCurrentQn(data.quality);
     qnRef.current = data.quality;
@@ -51,17 +53,25 @@ export function useVideoDetail(bvid: string) {
     if (!pages || idx < 0 || idx >= pages.length || idx === pageIndexRef.current) return;
     const prevIdx = pageIndexRef.current;
     const cid = pages[idx].cid;
+    // BUG-M-10: 请求序号——只接受最新一次分 P 请求的响应，旧请求 resolve 后丢弃
+    pageReqIdRef.current += 1;
+    const reqId = pageReqIdRef.current;
+    const isStale = () => reqId !== pageReqIdRef.current;
     pageIndexRef.current = idx;
     setPageIndex(idx);
     setInitialTime(0);
     cidRef.current = cid;
     try {
-      await fetchPlayData(cid, qnRef.current || defaultQn, true);
+      await fetchPlayData(cid, qnRef.current || defaultQn, true, isStale);
+      if (isStale()) return; // 已被更新的请求取代，不做任何处理
     } catch (e: any) {
-      // 回退：留在当前分 P，旧流继续可播
-      pageIndexRef.current = prevIdx;
-      setPageIndex(prevIdx);
-      cidRef.current = pages[prevIdx].cid;
+      if (isStale()) return; // 已不是最新请求：不回退，避免错误回滚已成功的更新
+      // 回退：留在当前分 P，旧流继续可播——仅当 pageIndex 仍是本次 idx 时才回退
+      if (pageIndexRef.current === idx) {
+        pageIndexRef.current = prevIdx;
+        setPageIndex(prevIdx);
+        cidRef.current = pages[prevIdx].cid;
+      }
       if (Platform.OS === 'android') {
         ToastAndroid.show('切换分P失败，请稍后重试', ToastAndroid.SHORT);
       }
@@ -74,28 +84,37 @@ export function useVideoDetail(bvid: string) {
     setPlayData(null);
     setQualities([]);
     setCurrentQn(0);
+    setError(null); // BUG-L-24: 切换视频时清掉上一个视频的错误提示
     setPageIndex(0);
     pageIndexRef.current = 0;
+    pageReqIdRef.current += 1; // 作废上一个视频在途的分 P 拉流请求
     videoRef.current = null;
     cidRef.current = 0;
+    // BUG-H-04: cancelled 守卫（与下方登录态 effect 同模式），旧 bvid 的迟到响应直接丢弃
+    let cancelled = false;
     async function fetchData() {
       try {
         setLoading(true);
         // 读取续播位置
         setInitialTime(usePlayProgressStore.getState().get(bvid));
         const detail = await getVideoDetail(bvid);
+        if (cancelled) return;
         setVideo(detail);
         videoRef.current = detail;
         const cid = detail.pages?.[0]?.cid ?? detail.cid as number;
         cidRef.current = cid;
-        await fetchPlayData(cid, defaultQn, true);
+        await fetchPlayData(cid, defaultQn, true, () => cancelled);
       } catch (e: any) {
+        if (cancelled) return;
         setError(e.message ?? 'Load failed');
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     }
     if (bvid) fetchData();
+    return () => {
+      cancelled = true;
+    };
   }, [bvid]);
 
   // 登录状态变化时重新拉取清晰度列表（登录后可能获得更高画质）
@@ -109,6 +128,7 @@ export function useVideoDetail(bvid: string) {
         if (cancelled) return;
         setPlayData(data);
         setCurrentQn(data.quality);
+        qnRef.current = data.quality; // BUG-M-11: 同步 qnRef，否则之后切分 P 会用旧 qn 拉流
         if (data.accept_quality?.length) {
           setQualities(
             data.accept_quality.map((q, i) => ({

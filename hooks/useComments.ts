@@ -12,25 +12,42 @@ export function useComments(aid: number, sort: number) {
   const sortRef = useRef(sort);
   const aidRef = useRef(aid);
   const cursorRef = useRef(''); // empty = first page
+  const loadSeqRef = useRef(0); // BUG-M-25: 请求序号，旧请求 resolve 后丢弃
 
-  aidRef.current = aid;
-
-  useEffect(() => {
-    if (sortRef.current === sort) return;
-    sortRef.current = sort;
+  // 重置评论列表（sort / aid 变化时）：作废在途请求，清空游标与列表
+  const resetComments = () => {
+    loadSeqRef.current += 1;
+    loadingRef.current = false;
+    setLoading(false);
     cursorRef.current = '';
     hasMoreRef.current = true;
     setComments([]);
     setHasMore(true);
+  };
+
+  useEffect(() => {
+    if (sortRef.current === sort) return;
+    sortRef.current = sort;
+    resetComments();
   }, [sort]);
+
+  // BUG-H-05: aid 变化时做与 sort 同样的重置，避免两视频评论混杂
+  useEffect(() => {
+    if (aidRef.current === aid) return;
+    aidRef.current = aid;
+    resetComments();
+  }, [aid]);
 
   const load = useCallback(async () => {
     if (loadingRef.current || !hasMoreRef.current || !aidRef.current) return;
     loadingRef.current = true;
+    loadSeqRef.current += 1;
+    const seq = loadSeqRef.current;
     setLoading(true);
     try {
       const isFirstPage = cursorRef.current === '';
       const { replies, nextCursor, isEnd } = await getComments(aidRef.current, cursorRef.current, sortRef.current);
+      if (seq !== loadSeqRef.current) return; // BUG-M-25: 已被重置/取代，丢弃旧响应
       cursorRef.current = nextCursor;
       setComments(prev => isFirstPage ? replies : [...prev, ...replies]);
       if (isEnd || replies.length === 0) {
@@ -40,8 +57,11 @@ export function useComments(aid: number, sort: number) {
     } catch (e) {
       console.error('Failed to load comments', e);
     } finally {
-      loadingRef.current = false;
-      setLoading(false);
+      // 只有最新请求才释放锁；被作废的旧请求不碰共享状态
+      if (seq === loadSeqRef.current) {
+        loadingRef.current = false;
+        setLoading(false);
+      }
     }
   }, []);
 

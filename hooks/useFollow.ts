@@ -38,24 +38,27 @@ export function useFollow(mid: number | undefined) {
       toast("请先登录后再关注");
       return;
     }
-    const biliJct = await ensureBiliJct();
-    if (!biliJct) {
-      toast("请重新登录后再使用关注功能");
-      return;
-    }
+    // BUG-M-27: 同步先置防重锁（在 await 之前），避免快速双击并发两次请求
     if (inflightRef.current) return;
     inflightRef.current = true;
     setLoading(true);
-    const next = !following;
-    setFollowing(next); // 乐观更新
     try {
-      await modifyRelation(mid, next ? 1 : 2);
-    } catch (e: any) {
-      setFollowing(!next); // 失败回滚
-      if (e?.message === "NO_CSRF") {
+      const biliJct = await ensureBiliJct();
+      if (!biliJct) {
         toast("请重新登录后再使用关注功能");
-      } else {
-        toast(`操作失败：${e?.message || "未知错误"}`);
+        return;
+      }
+      const next = !following;
+      setFollowing(next); // 乐观更新
+      try {
+        await modifyRelation(mid, next ? 1 : 2);
+      } catch (e: any) {
+        setFollowing(!next); // 失败回滚
+        if (e?.message === "NO_CSRF") {
+          toast("请重新登录后再使用关注功能");
+        } else {
+          toast(`操作失败：${e?.message || "未知错误"}`);
+        }
       }
     } finally {
       inflightRef.current = false;
@@ -70,22 +73,31 @@ export function useFollow(mid: number | undefined) {
       toast("请先登录后再关注");
       return;
     }
-    const biliJct = await ensureBiliJct();
-    if (!biliJct) {
-      toast("请重新登录后再使用关注功能");
-      return;
-    }
+    // BUG-M-27: 同步先置防重锁（在 await 之前），finally 释放
     if (inflightRef.current) return;
     inflightRef.current = true;
     setLoading(true);
-    setFollowing(true); // 乐观更新
     try {
-      await modifyRelation(mid, 1);
-      await moveFollowToTags(mid, tagids);
-      toast(tagids.length ? "已关注并移入分组" : "关注成功");
-    } catch (e: any) {
-      setFollowing(false); // 失败回滚
-      toast(`操作失败：${e?.message || "未知错误"}`);
+      const biliJct = await ensureBiliJct();
+      if (!biliJct) {
+        toast("请重新登录后再使用关注功能");
+        return;
+      }
+      setFollowing(true); // 乐观更新
+      try {
+        await modifyRelation(mid, 1);
+      } catch (e: any) {
+        setFollowing(false); // 关注失败才回滚
+        toast(`操作失败：${e?.message || "未知错误"}`);
+        return;
+      }
+      // BUG-L-25: 关注已成功——分组失败不再回滚关注态，如实提示
+      try {
+        await moveFollowToTags(mid, tagids);
+        toast(tagids.length ? "已关注并移入分组" : "关注成功");
+      } catch (e: any) {
+        toast(`已关注，但移入分组失败：${e?.message || "未知错误"}`);
+      }
     } finally {
       inflightRef.current = false;
       setLoading(false);

@@ -59,19 +59,27 @@ export function FollowTagSheet({ visible, onClose, onConfirm }: Props) {
       return;
     }
     setCreating(true);
+    let tagid: number;
     try {
-      const tagid = await createFollowTag(name);
-      const next = await getFollowTags();
-      setTags(next);
-      setSelected(tagid);
-      setShowCreate(false);
-      setNewName("");
-      toast("分组已创建");
+      tagid = await createFollowTag(name);
     } catch (e: any) {
       toast(`创建失败：${e?.message || "未知错误"}`);
-    } finally {
       setCreating(false);
+      return;
     }
+    // 刷新列表失败不影响已拿到的 tagid：只提示，仍选中新分组
+    let refreshFailed = false;
+    try {
+      const next = await getFollowTags();
+      setTags(next);
+    } catch {
+      refreshFailed = true;
+    }
+    setSelected(tagid);
+    setShowCreate(false);
+    setNewName("");
+    toast(refreshFailed ? "分组已创建，但列表刷新失败" : "分组已创建");
+    setCreating(false);
   };
 
   if (!rendered) return null;

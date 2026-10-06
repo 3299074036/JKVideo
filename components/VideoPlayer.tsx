@@ -18,7 +18,7 @@ async function setImmersive(hidden: boolean) {
     }
   } catch {}
 }
-import { NativeVideoPlayer, type NativeVideoPlayerRef, type VideoPageInfo } from './NativeVideoPlayer';
+import { NativeVideoPlayer, type ResizeMode, type VideoPageInfo } from './NativeVideoPlayer';
 import type { PlayUrlResponse, DanmakuItem } from '../services/types';
 import { useTheme } from '../utils/theme';
 
@@ -64,6 +64,8 @@ export function VideoPlayer({ playData, qualities, currentQn, onQualityChange, b
   const needsRotation = !ScreenOrientation && fullscreen;
   const lastTimeRef = useRef(0);
   const seededRef = useRef(false);
+  // BUG-L-12：转屏补隐藏的定时器 id，退出全屏时清理
+  const rehideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const theme = useTheme();
   // 续播：第一次拿到 initialTime 时塞进 lastTimeRef
   if (!seededRef.current && typeof initialTime === 'number' && initialTime > 0) {
@@ -79,7 +81,15 @@ export function VideoPlayer({ playData, qualities, currentQn, onQualityChange, b
     }
     cidRef.current = cid;
   }, [cid]);
-  const portraitRef = useRef<NativeVideoPlayerRef>(null);
+  // BUG-H-03：播放控制状态上提到这里，竖屏/全屏两个 NativeVideoPlayer 实例共享，
+  // 进/退全屏时暂停/倍速/音量/弹幕开关/画面模式/锁定保持一致
+  const [paused, setPaused] = useState(false);
+  const [rate, setRate] = useState(1);
+  const [volume, setVolume] = useState(1);
+  const [showDanmaku, setShowDanmaku] = useState(true);
+  const [resizeMode, setResizeMode] = useState<ResizeMode>("contain");
+  const [locked, setLocked] = useState(false);
+  // BUG-L-13：portraitRef 及 useImperativeHandle 命令式 API 经核查无任何调用方，已删除
 
   const handleEnterFullscreen = async () => {
     if (Platform.OS !== 'web')
@@ -94,6 +104,8 @@ export function VideoPlayer({ playData, qualities, currentQn, onQualityChange, b
     onFullscreenChange(false);
     StatusBar.setHidden(false, 'fade');
     await setImmersive(false);
+    // 锁定是全屏专属能力：退出全屏时解锁，避免竖屏实例继承锁定态后无解锁入口
+    setLocked(false);
     if (Platform.OS !== 'web')
       await ScreenOrientation?.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
   };
@@ -108,17 +120,24 @@ export function VideoPlayer({ playData, qualities, currentQn, onQualityChange, b
     const entry = StatusBar.pushStackEntry({ hidden: true });
     const rehide = () => StatusBar.setHidden(true);
     rehide();
+    // BUG-L-12：转屏补隐藏的定时器存 ref，退出全屏时清理，
+    // 避免 300ms 内退出全屏后 rehide 仍执行导致竖屏状态栏被隐藏
     let orientationSub: { remove(): void } | null = null;
     try {
       orientationSub =
         ScreenOrientation?.addOrientationChangeListener(() => {
           // 转屏落定后再补一次（转屏会重置系统窗口 insets）
-          setTimeout(rehide, 300);
+          if (rehideTimerRef.current) clearTimeout(rehideTimerRef.current);
+          rehideTimerRef.current = setTimeout(rehide, 300);
         }) ?? null;
     } catch {}
     const timer = setInterval(rehide, 800);
     return () => {
       clearInterval(timer);
+      if (rehideTimerRef.current) {
+        clearTimeout(rehideTimerRef.current);
+        rehideTimerRef.current = null;
+      }
       try {
         orientationSub?.remove();
       } catch {}
@@ -183,7 +202,6 @@ export function VideoPlayer({ playData, qualities, currentQn, onQualityChange, b
       {/* 竖屏和全屏互斥渲染，避免同时挂载两个视频解码器 */}
       {!fullscreen && (
         <NativeVideoPlayer
-          ref={portraitRef}
           playData={playData}
           qualities={qualities}
           currentQn={currentQn}
@@ -197,6 +215,18 @@ export function VideoPlayer({ playData, qualities, currentQn, onQualityChange, b
           onDanmakuListPress={onDanmakuListPress}
           onBack={onBack}
           coverUrl={coverUrl}
+          paused={paused}
+          onPausedChange={setPaused}
+          rate={rate}
+          onRateChange={setRate}
+          volume={volume}
+          onVolumeChange={setVolume}
+          showDanmaku={showDanmaku}
+          onShowDanmakuChange={setShowDanmaku}
+          resizeMode={resizeMode}
+          onResizeModeChange={setResizeMode}
+          locked={locked}
+          onLockedChange={setLocked}
         />
       )}
 
@@ -235,6 +265,18 @@ export function VideoPlayer({ playData, qualities, currentQn, onQualityChange, b
                 upFace={upFace}
                 onlineCount={onlineCount}
                 onUpPress={handleUpPress}
+                paused={paused}
+                onPausedChange={setPaused}
+                rate={rate}
+                onRateChange={setRate}
+                volume={volume}
+                onVolumeChange={setVolume}
+                showDanmaku={showDanmaku}
+                onShowDanmakuChange={setShowDanmaku}
+                resizeMode={resizeMode}
+                onResizeModeChange={setResizeMode}
+                locked={locked}
+                onLockedChange={setLocked}
                 style={needsRotation ? { width: height, height: width } : { flex: 1 }}
               />
             </View>

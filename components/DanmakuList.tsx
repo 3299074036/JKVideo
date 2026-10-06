@@ -95,6 +95,11 @@ export default function DanmakuList({
   const keyCounterRef = useRef(0);
   const isAtBottomRef = useRef(true);
   const danmakusRef = useRef(danmakus);
+  // maxItems 保鲜：drip 回调 deps 为空，内部读 ref 避免 stale closure
+  const maxItemsRef = useRef(maxItems);
+  useEffect(() => {
+    maxItemsRef.current = maxItems;
+  }, [maxItems]);
 
   // Detect changes in the danmakus array
   useEffect(() => {
@@ -164,12 +169,15 @@ export default function DanmakuList({
     processedIndexRef.current = i;
   }, [currentTime, danmakus, isLive]);
 
-  // Drip interval — always running so queue is consumed even when tab is hidden
+  // Drip 定时消费队列 — 递归 setTimeout，每次按当前队列长度选择间隔
+  // （setInterval 的时长只在挂载时求值一次，无法随积压加速）
   useEffect(() => {
-    const id = setInterval(
-      () => {
-        if (queueRef.current.length === 0) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let stopped = false;
 
+    const drip = () => {
+      if (stopped) return;
+      if (queueRef.current.length > 0) {
         const item = queueRef.current.shift()!;
         const fadeAnim = acquireAnim();
         const displayed: DisplayedDanmaku = {
@@ -184,10 +192,11 @@ export default function DanmakuList({
           useNativeDriver: true,
         }).start();
 
+        const cap = maxItemsRef.current;
         setDisplayedItems((prev) => {
           const next = [...prev, displayed];
-          if (next.length > maxItems) {
-            const trimCount = next.length - Math.floor(maxItems / 2);
+          if (next.length > cap) {
+            const trimCount = next.length - Math.floor(cap / 2);
             const trimmed = next.slice(trimCount);
             releaseAnims(next.slice(0, trimCount));
             return trimmed;
@@ -202,13 +211,21 @@ export default function DanmakuList({
         } else {
           setUnseenCount((c) => c + 1);
         }
-      },
-      queueRef.current.length > QUEUE_FAST_THRESHOLD
-        ? FAST_DRIP_INTERVAL
-        : DRIP_INTERVAL,
-    );
+      }
+      // 每次消费前按当前队列长度选间隔：积压超过阈值时加速消费
+      timer = setTimeout(
+        drip,
+        queueRef.current.length > QUEUE_FAST_THRESHOLD
+          ? FAST_DRIP_INTERVAL
+          : DRIP_INTERVAL,
+      );
+    };
 
-    return () => clearInterval(id);
+    timer = setTimeout(drip, DRIP_INTERVAL);
+    return () => {
+      stopped = true;
+      if (timer) clearTimeout(timer);
+    };
   }, []);
 
   const handleScroll = useCallback(

@@ -47,6 +47,11 @@ export default function FavoritesScreen() {
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const loadingRef = useRef(false);
+  // 当前 selectedId 保鲜：响应返回时校验 folderId 是否仍等于它
+  const selectedIdRef = useRef<number | null>(null);
+  selectedIdRef.current = selectedId;
+  // 请求序号：reset 请求抢占时，旧请求的迟到响应被丢弃
+  const reqSeqRef = useRef(0);
 
   const loadFolders = useCallback(() => {
     setFoldersError('');
@@ -64,19 +69,26 @@ export default function FavoritesScreen() {
   }, [loadFolders]);
 
   const loadResources = useCallback(async (folderId: number, pn: number, reset = false) => {
-    if (loadingRef.current) return;
+    // 非 reset 请求仍走互斥锁；reset 请求抢占（序号递增使在飞旧响应被丢弃）
+    if (!reset && loadingRef.current) return;
+    const seq = ++reqSeqRef.current;
     loadingRef.current = true;
     if (reset) setRefreshing(true); else setLoading(true);
     try {
       const r = await getFavResources(folderId, pn, PAGE_SIZE);
+      if (seq !== reqSeqRef.current) return; // 已被更新的请求抢占，丢弃旧响应
+      if (folderId !== selectedIdRef.current) return; // 收藏夹已切换，丢弃旧响应
       setVideos((prev) => (reset ? r.items : [...prev, ...r.items]));
       setPage(pn);
       setHasMore(r.hasMore);
     } catch {}
     finally {
-      loadingRef.current = false;
-      setLoading(false);
-      setRefreshing(false);
+      // 只有最新请求释放锁，避免旧请求把新请求的 loading 状态清掉
+      if (seq === reqSeqRef.current) {
+        loadingRef.current = false;
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
   }, []);
 

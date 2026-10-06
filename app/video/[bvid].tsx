@@ -23,6 +23,7 @@ import { proxyImageUrl } from "../../utils/imageUrl";
 import { DownloadSheet } from "../../components/DownloadSheet";
 import { VideoDetailSkeleton } from "../../components/VideoDetailSkeleton";
 import { useTheme } from "../../utils/theme";
+import { toast } from "../../utils/toast";
 import { useLiveStore } from "../../store/liveStore";
 import { VideoActionRow } from "../../components/VideoActionRow";
 import { DescriptionSheet } from "../../components/DescriptionSheet";
@@ -30,10 +31,20 @@ import { EngagementSheet, type EngagementTab } from "../../components/Engagement
 import { FollowTagSheet } from "../../components/FollowTagSheet";
 import { useFollow } from "../../hooks/useFollow";
 
+const BVID_RE = /^BV[0-9A-Za-z]{10}$/;
+
 export default function VideoDetailScreen() {
   const { bvid } = useLocalSearchParams<{ bvid: string }>();
   const router = useRouter();
   const theme = useTheme();
+
+  // bvid 非法（如构造的 deep link）直接提示并返回，不让它拼进接口参数/文件路径
+  useEffect(() => {
+    if (bvid && !BVID_RE.test(bvid)) {
+      toast("视频链接无效");
+      router.back();
+    }
+  }, [bvid]);
 
   useLayoutEffect(() => {
     useLiveStore.getState().clearLive();
@@ -121,13 +132,22 @@ export default function VideoDetailScreen() {
   }, [bvid, loadRelated]);
 
   // 弹幕按当前分 P 的 cid 拉取，切分 P 时先清空老弹幕
+  // cancelled 守卫：快速切分 P 时旧 cid 的迟到响应会被丢弃，不会写入新分 P
   useEffect(() => {
     setDanmakus([]);
     if (!currentCid) return;
+    let cancelled = false;
     const handle = InteractionManager.runAfterInteractions(() => {
-      getDanmaku(currentCid).then(setDanmakus).catch(() => {});
+      getDanmaku(currentCid)
+        .then((items) => {
+          if (!cancelled) setDanmakus(items);
+        })
+        .catch(() => {});
     });
-    return () => handle.cancel();
+    return () => {
+      cancelled = true;
+      handle.cancel();
+    };
   }, [currentCid]);
 
   // 当前分 P 在线观看人数（全屏顶栏 UP 信息区展示）
@@ -420,6 +440,11 @@ function SeasonSection({
   const listRef = useRef<FlatList>(null);
   // 初次渲染先隐身，scrollToOffset 完成后再显示，彻底消除"先 0 再跳"的可见闪烁
   const [ready, setReady] = useState(currentIndex <= 0);
+  // rAF id：卸载时清理，避免卸载后仍 setReady
+  const rafRef = useRef(0);
+  useEffect(() => {
+    return () => cancelAnimationFrame(rafRef.current);
+  }, []);
 
   // 计算让当前集水平居中的初始 contentOffset
   const initialOffset = useMemo(() => {
@@ -436,7 +461,7 @@ function SeasonSection({
     if (currentIndex > 0 && initialOffset > 0) {
       listRef.current?.scrollToOffset({ offset: initialOffset, animated: false });
     }
-    requestAnimationFrame(() => setReady(true));
+    rafRef.current = requestAnimationFrame(() => setReady(true));
   }, [ready, currentIndex, initialOffset]);
 
   return (

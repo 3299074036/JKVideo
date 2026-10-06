@@ -16,12 +16,15 @@ import { ErrorBoundary } from '@sentry/react-native';
 import { useFonts } from 'expo-font';
 import { Ionicons } from '@expo/vector-icons';
 
-Sentry.init({
-  dsn: process.env.EXPO_PUBLIC_SENTRY_DSN ?? '',
-  enabled: !__DEV__,
-  tracesSampleRate: 0.05,
-  environment: process.env.EXPO_PUBLIC_APP_ENV ?? 'production',
-});
+const sentryDsn = process.env.EXPO_PUBLIC_SENTRY_DSN ?? '';
+if (sentryDsn) {
+  Sentry.init({
+    dsn: sentryDsn,
+    enabled: !__DEV__,
+    tracesSampleRate: 0.05,
+    environment: process.env.EXPO_PUBLIC_APP_ENV ?? 'production',
+  });
+}
 
 function RootLayout() {
   const restore = useAuthStore(s => s.restore);

@@ -7,32 +7,42 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 export function useAutoHideTimer(delayMs = 3000, keep?: () => boolean) {
   const [visible, setVisible] = useState(true);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // BUG-L-30: ref 持有当前 visible，toggle/show/hide/reset 的超时回调里同步维护；
+  // 判断逻辑移到 setState updater 之外，updater 保持纯函数（无副作用）
+  const visibleRef = useRef(true);
+
+  const setVisibleSync = (v: boolean) => {
+    visibleRef.current = v;
+    setVisible(v);
+  };
 
   const reset = useCallback(() => {
     if (timerRef.current) clearTimeout(timerRef.current);
     if (keep?.()) return;
-    timerRef.current = setTimeout(() => setVisible(false), delayMs);
+    timerRef.current = setTimeout(() => {
+      visibleRef.current = false;
+      setVisible(false);
+    }, delayMs);
   }, [delayMs, keep]);
 
   const show = useCallback(() => {
-    setVisible(true);
+    setVisibleSync(true);
     reset();
   }, [reset]);
 
   const hide = useCallback(() => {
     if (timerRef.current) clearTimeout(timerRef.current);
-    setVisible(false);
+    setVisibleSync(false);
   }, []);
 
   const toggle = useCallback(() => {
-    setVisible(prev => {
-      if (!prev) {
-        reset();
-        return true;
-      }
+    if (visibleRef.current) {
       if (timerRef.current) clearTimeout(timerRef.current);
-      return false;
-    });
+      setVisibleSync(false);
+    } else {
+      setVisibleSync(true);
+      reset();
+    }
   }, [reset]);
 
   useEffect(() => {

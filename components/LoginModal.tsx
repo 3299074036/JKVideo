@@ -124,7 +124,7 @@ export function LoginModal({ visible, onClose }: Props) {
             { text: "关闭", style: "cancel" },
             {
               text: "打开哔哩哔哩",
-              onPress: () => Linking.openURL("bilibili://"),
+              onPress: () => Linking.openURL("https://www.bilibili.com"),
             },
           ]);
         } catch {

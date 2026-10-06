@@ -93,14 +93,20 @@ function extractLoginCookies(setCookie: unknown): { sessdata?: string; biliJct?:
       : [];
   for (const c of list) {
     if (typeof c !== 'string') continue;
-    for (const rawPart of c.split(';')) {
-      const p = rawPart.trim();
-      if (!out.sessdata && p.startsWith('SESSDATA=')) {
-        const v = p.slice('SESSDATA='.length);
-        if (v) out.sessdata = v;
-      } else if (!out.biliJct && p.startsWith('bili_jct=')) {
-        const v = p.slice('bili_jct='.length);
-        if (v) out.biliJct = v;
+    // RN 常把多条 Set-Cookie 用 ", " 合并成一个字符串；先按 ", " 切分出单条。
+    // 前瞻要求逗号后出现 cookie 名（含 =），避免把 Expires=Wed, 21 Oct ... 里
+    // 的日期逗号误切（日期段里逗号后没有 "名=" 结构）。
+    const singles = c.split(/,(?=[^;,]+?=)/);
+    for (const single of singles) {
+      for (const rawPart of single.split(';')) {
+        const p = rawPart.trim();
+        if (!out.sessdata && p.startsWith('SESSDATA=')) {
+          const v = p.slice('SESSDATA='.length);
+          if (v) out.sessdata = v;
+        } else if (!out.biliJct && p.startsWith('bili_jct=')) {
+          const v = p.slice('bili_jct='.length);
+          if (v) out.biliJct = v;
+        }
       }
     }
     if (out.sessdata && out.biliJct) break;
@@ -233,13 +239,16 @@ export async function getRecommendFeed(freshIdx = 0): Promise<VideoItem[]> {
 
 export async function getPopularVideos(pn = 1): Promise<VideoItem[]> {
   const res = await api.get('/x/web-interface/popular', { params: { pn, ps: 20 } });
-  return res.data.data.list as VideoItem[];
+  return (res.data?.data?.list ?? []) as VideoItem[];
 }
 
 export function getVideoDetail(bvid: string): Promise<VideoItem> {
   return dedupe(dedupeKey('/x/web-interface/view', { bvid }), () =>
     withRetry(async () => {
       const res = await api.get('/x/web-interface/view', { params: { bvid } });
+      if (res.data?.code !== 0) {
+        throw new Error(`API ${res.data?.code}: ${res.data?.message ?? '获取视频详情失败'}`);
+      }
       return res.data.data as VideoItem;
     }),
   );
@@ -261,6 +270,9 @@ export function getPlayUrl(bvid: string, cid: number, qn = 64): Promise<PlayUrlR
   return dedupe(dedupeKey('/x/player/playurl', params), () =>
     withRetry(async () => {
       const res = await api.get('/x/player/playurl', { params });
+      if (res.data?.code !== 0) {
+        throw new Error(`API ${res.data?.code}: ${res.data?.message ?? '获取播放地址失败'}`);
+      }
       return res.data.data as PlayUrlResponse;
     }),
   );
@@ -336,7 +348,9 @@ export async function getUploaderVideos(mid: number, pn = 1, ps = 20): Promise<{
 
 export async function getUserInfo(): Promise<{ face: string; uname: string; mid: number }> {
   const res = await api.get('/x/web-interface/nav');
-  const { face, uname, mid } = res.data.data;
+  // 未登录时接口返回 code:-101 且 data 为 null，直接解构会抛 TypeError
+  const data = res.data?.data ?? {};
+  const { face, uname, mid } = data;
   return { face: face ?? '', uname: uname ?? '', mid: mid ?? 0 };
 }
 
@@ -375,7 +389,7 @@ export async function generateQRCode(): Promise<QRCodeInfo> {
   const headers = isWeb
     ? {}
     : { 'Referer': 'https://www.bilibili.com' };
-  const res = await axios.get(`${PASSPORT}/x/passport-login/web/qrcode/generate`, { headers });
+  const res = await axios.get(`${PASSPORT}/x/passport-login/web/qrcode/generate`, { headers, timeout: 10000 });
   return res.data.data as QRCodeInfo;
 }
 
@@ -386,6 +400,7 @@ export async function pollQRCode(qrcode_key: string): Promise<{ code: number; co
   const res = await axios.get(`${PASSPORT}/x/passport-login/web/qrcode/poll`, {
     params: { qrcode_key },
     headers,
+    timeout: 10000,
   });
   const { code } = res.data.data;
   let cookie: string | undefined;
@@ -550,7 +565,10 @@ export async function getLiveStreamUrl(roomId: number, qn = 10000): Promise<Live
 
 function parseDuration(s: string): number {
   const parts = s.split(':').map(Number);
-  return parts.length === 2 ? parts[0] * 60 + parts[1] : parts[0] * 3600 + parts[1] * 60 + parts[2];
+  if (parts.some((n) => Number.isNaN(n))) return 0;
+  if (parts.length === 2) return parts[0] * 60 + parts[1];
+  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  return 0;
 }
 
 export async function searchVideos(keyword: string, page = 1, order = ''): Promise<VideoItem[]> {
@@ -635,6 +653,7 @@ export async function getDanmaku(cid: number): Promise<DanmakuItem[]> {
       const res = await axios.get(`${COMMENT_BASE}/${cid}.xml`, {
         headers: {},
         responseType: 'text',
+        timeout: 10000,
       });
       return parseDanmakuXml(res.data);
     }
@@ -643,6 +662,7 @@ export async function getDanmaku(cid: number): Promise<DanmakuItem[]> {
     const res = await axios.get(`${COMMENT_BASE}/${cid}.xml`, {
       headers: { Referer: 'https://www.bilibili.com', 'User-Agent': UA },
       responseType: 'arraybuffer',
+      timeout: 10000,
     });
 
     const bytes = new Uint8Array(res.data as ArrayBuffer);
@@ -664,7 +684,8 @@ export async function getDanmaku(cid: number): Promise<DanmakuItem[]> {
 
     return parseDanmakuXml(xmlText);
   }).catch((e) => {
-    console.warn('getDanmaku failed:', e);
+    // 只打印 message：完整 error 对象里 config.headers 带有 Cookie（SESSDATA/bili_jct），不能进 logcat
+    console.warn('getDanmaku failed:', (e as Error)?.message ?? 'unknown error');
     return [] as DanmakuItem[];
   });
 }
@@ -697,7 +718,7 @@ export async function getSearchSuggest(term: string): Promise<SearchSuggestItem[
     const res = await api.get('/x/web-interface/search/suggest', {
       params: { term, main_ver: 'v1', highlight: '' },
     });
-    const tags: any[] = res.data?.result?.tag ?? [];
+    const tags: any[] = res.data?.data?.tag ?? [];
     return tags.map((t: any) => ({ value: t.value ?? '', ref: t.ref ?? 0 }));
   } catch {
     return [];

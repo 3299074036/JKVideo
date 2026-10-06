@@ -48,24 +48,26 @@ export const RankingList = forwardRef<RankingListHandle, Props>(
     const [loading, setLoading] = useState(false);
     const [refreshing, setRefreshing] = useState(false);
     const [error, setError] = useState("");
-    const loadingRef = useRef(false);
     const listRef = useRef<FlatList>(null);
+    // 请求序号：快速切换分区时旧响应直接丢弃（修复竞态）
+    const reqTokenRef = useRef(0);
 
     const load = useCallback(async (regionRid: number, reset = false) => {
-      if (loadingRef.current) return;
-      loadingRef.current = true;
+      const token = ++reqTokenRef.current;
       if (reset) setRefreshing(true);
       else setLoading(true);
       setError("");
       try {
         const list = await getRanking(regionRid);
+        if (reqTokenRef.current !== token) return; // 已被更新的请求抢占，丢弃
         setItems(list);
       } catch (e: any) {
+        if (reqTokenRef.current !== token) return; // 已被更新的请求抢占，丢弃
         setError(e?.message || "加载失败");
       } finally {
-        loadingRef.current = false;
-        setLoading(false);
-        setRefreshing(false);
+        // 各自清理自己设置的 loading 指示，避免卡死
+        if (reset) setRefreshing(false);
+        else setLoading(false);
       }
     }, []);
 

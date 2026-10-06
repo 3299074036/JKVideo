@@ -33,6 +33,7 @@ export function useSearch() {
   const [hotSearches, setHotSearches] = useState<HotSearchItem[]>([]);
   const loadingRef = useRef(false);
   const suggestTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const suggestSeqRef = useRef(0); // BUG-L-26: 联想请求序号，旧请求 resolve 后丢弃
   const currentSort = useRef<SearchSort>('default');
 
   // Load history & hot searches on mount
@@ -43,13 +44,16 @@ export function useSearch() {
 
   // Debounced suggestions
   useEffect(() => {
+    suggestSeqRef.current += 1; // BUG-L-26: 新关键词使之前在途的联想请求作废
     if (suggestTimer.current) clearTimeout(suggestTimer.current);
     if (!keyword.trim() || keyword.trim().length < 1) {
       setSuggestions([]);
       return;
     }
     suggestTimer.current = setTimeout(async () => {
+      const seq = suggestSeqRef.current;
       const items = await getSearchSuggest(keyword.trim());
+      if (seq !== suggestSeqRef.current) return; // 旧关键词的联想结果：丢弃
       setSuggestions(items);
     }, 300);
     return () => {
@@ -81,8 +85,9 @@ export function useSearch() {
     await AsyncStorage.removeItem(HISTORY_KEY);
   }, []);
 
-  const search = useCallback(async (kw: string, reset = false, sortOverride?: SearchSort) => {
-    if (!kw.trim() || loadingRef.current) return;
+  // 返回是否真正发起了请求：有在途请求时被拦截返回 false（调用方可据此回滚状态）
+  const search = useCallback(async (kw: string, reset = false, sortOverride?: SearchSort): Promise<boolean> => {
+    if (!kw.trim() || loadingRef.current) return false;
     loadingRef.current = true;
     setLoading(true);
     setSuggestions([]);
@@ -101,18 +106,27 @@ export function useSearch() {
       }
       setHasMore(items.length >= 20);
     } catch {
-      setHasMore(false);
+      // BUG-L-27: 出错时不改 hasMore（保持原值），允许用户重试翻页
     } finally {
       loadingRef.current = false;
       setLoading(false);
     }
+    return true;
   }, [page, addToHistory]);
 
   const changeSort = useCallback((newSort: SearchSort) => {
+    const prevSort = currentSort.current;
     setSort(newSort);
     currentSort.current = newSort;
     if (keyword.trim()) {
-      search(keyword, true, newSort);
+      // BUG-M-20: search 可能被在途请求拦截（返回 false），此时回滚排序状态，
+      // 避免排序按钮高亮与列表实际排序错位
+      search(keyword, true, newSort).then(started => {
+        if (!started) {
+          setSort(prevSort);
+          currentSort.current = prevSort;
+        }
+      });
     }
   }, [keyword, search]);
 

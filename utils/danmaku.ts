@@ -10,8 +10,9 @@ export function parseDanmakuXml(xml: string): DanmakuItem[] {
     const time = parseFloat(p[0]);
     const mode = parseInt(p[1], 10);
     const text = m[2]
-      .replace(/&amp;/g, '&').replace(/&lt;/g, '<')
-      .replace(/&gt;/g, '>').replace(/&quot;/g, '"').trim();
+      // 注意顺序：&amp; 必须最后解码，否则 "&amp;lt;" 会被双重解成 "<"
+      .replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"').replace(/&amp;/g, '&').trim();
     if (!text || isNaN(time)) continue;
     if (mode !== 1 && mode !== 4 && mode !== 5) continue;
     items.push({ time, mode: mode as 1|4|5, fontSize: parseInt(p[2],10), color: parseInt(p[3],10), text });
