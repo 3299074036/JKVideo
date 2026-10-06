@@ -32,7 +32,7 @@ export interface VideoItem {
   duration: number;
   desc: string;
   cid?: number;
-  pages?: Array<{ cid: number; part: string }>;
+  pages?: Array<{ cid: number; part: string; duration?: number }>;
   goto?: 'av' | 'live';
   roomid?: number;
   online?: number;

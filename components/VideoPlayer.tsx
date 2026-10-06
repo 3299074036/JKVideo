@@ -18,7 +18,7 @@ async function setImmersive(hidden: boolean) {
     }
   } catch {}
 }
-import { NativeVideoPlayer, type NativeVideoPlayerRef } from './NativeVideoPlayer';
+import { NativeVideoPlayer, type NativeVideoPlayerRef, type VideoPageInfo } from './NativeVideoPlayer';
 import type { PlayUrlResponse, DanmakuItem } from '../services/types';
 import { useTheme } from '../utils/theme';
 
@@ -43,6 +43,12 @@ interface Props {
   onNextPage?: () => void;
   hasPrevPage?: boolean;
   hasNextPage?: boolean;
+  /** 分 P 列表 / 当前下标 / 切换回调（全屏分 P 选择按钮用），仅全屏 */
+  pages?: VideoPageInfo[];
+  pageIndex?: number;
+  onPageChange?: (idx: number) => void;
+  /** 正在切换的分 P 下标（切换信号）；null 表示无切换/切换失败 */
+  switchingPageIdx?: number | null;
   /** 全屏顶栏 UP 主信息 */
   upName?: string;
   upFace?: string;
@@ -51,7 +57,7 @@ interface Props {
   onUpPress?: () => void;
 }
 
-export function VideoPlayer({ playData, qualities, currentQn, onQualityChange, bvid, cid, danmakus, onTimeUpdate, initialTime, onDanmakuListPress, onBack, coverUrl, onPrevPage, onNextPage, hasPrevPage, hasNextPage, upName, upFace, onlineCount, onUpPress }: Props) {
+export function VideoPlayer({ playData, qualities, currentQn, onQualityChange, bvid, cid, danmakus, onTimeUpdate, initialTime, onDanmakuListPress, onBack, coverUrl, onPrevPage, onNextPage, hasPrevPage, hasNextPage, pages, pageIndex, onPageChange, switchingPageIdx, upName, upFace, onlineCount, onUpPress }: Props) {
   const [fullscreen, setFullscreen] = useState(false);
   const { width, height } = useWindowDimensions();
   const VIDEO_HEIGHT = width * 0.5625;
@@ -194,6 +200,10 @@ export function VideoPlayer({ playData, qualities, currentQn, onQualityChange, b
                 onNextPage={onNextPage}
                 hasPrevPage={hasPrevPage}
                 hasNextPage={hasNextPage}
+                pages={pages}
+                pageIndex={pageIndex}
+                onPageChange={onPageChange}
+                switchingPageIdx={switchingPageIdx}
                 upName={upName}
                 upFace={upFace}
                 onlineCount={onlineCount}
