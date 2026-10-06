@@ -47,9 +47,11 @@ interface Props {
   upName?: string;
   upFace?: string;
   onlineCount?: number;
+  /** 点击全屏顶栏 UP 主信息：先退全屏再跳转 */
+  onUpPress?: () => void;
 }
 
-export function VideoPlayer({ playData, qualities, currentQn, onQualityChange, bvid, cid, danmakus, onTimeUpdate, initialTime, onDanmakuListPress, onBack, coverUrl, onPrevPage, onNextPage, hasPrevPage, hasNextPage, upName, upFace, onlineCount }: Props) {
+export function VideoPlayer({ playData, qualities, currentQn, onQualityChange, bvid, cid, danmakus, onTimeUpdate, initialTime, onDanmakuListPress, onBack, coverUrl, onPrevPage, onNextPage, hasPrevPage, hasNextPage, upName, upFace, onlineCount, onUpPress }: Props) {
   const [fullscreen, setFullscreen] = useState(false);
   const { width, height } = useWindowDimensions();
   const VIDEO_HEIGHT = width * 0.5625;
@@ -88,6 +90,25 @@ export function VideoPlayer({ playData, qualities, currentQn, onQualityChange, b
     await setImmersive(false);
     if (Platform.OS !== 'web')
       await ScreenOrientation?.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+  };
+
+  // 首次进全屏时转屏会触发 _layout 重渲染，它的 expo-status-bar 会把 hidden
+  // 覆盖回 false（第二次进全屏不再重渲染，所以正常）。Modal 挂载后延迟补设，
+  // 确保第一次进全屏状态栏也隐藏。
+  useEffect(() => {
+    if (!fullscreen) return;
+    const t1 = setTimeout(() => StatusBar.setHidden(true, 'fade'), 150);
+    const t2 = setTimeout(() => StatusBar.setHidden(true, 'fade'), 600);
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
+  }, [fullscreen]);
+
+  // 点击全屏顶栏 UP 主信息：先退全屏（恢复状态栏/方向），再跳转 UP 主页
+  const handleUpPress = async () => {
+    if (fullscreen) await handleExitFullscreen();
+    onUpPress?.();
   };
 
   useEffect(() => {
@@ -176,6 +197,7 @@ export function VideoPlayer({ playData, qualities, currentQn, onQualityChange, b
                 upName={upName}
                 upFace={upFace}
                 onlineCount={onlineCount}
+                onUpPress={handleUpPress}
                 style={needsRotation ? { width: height, height: width } : { flex: 1 }}
               />
             </View>

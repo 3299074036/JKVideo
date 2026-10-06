@@ -172,6 +172,9 @@ export default function VideoDetailScreen() {
         upName={video?.owner?.name}
         upFace={video?.owner?.face ? proxyImageUrl(video.owner.face) : undefined}
         onlineCount={onlineCount}
+        onUpPress={() => {
+          if (video?.owner?.mid) router.push(`/creator/${video.owner.mid}` as any);
+        }}
       />
 
       {videoLoading || !video || !minSkeletonElapsed ? (
