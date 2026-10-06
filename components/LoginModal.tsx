@@ -17,6 +17,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { generateQRCode, pollQRCode } from "../services/bilibili";
 import { useAuthStore } from "../store/authStore";
 import { useTheme } from "../utils/theme";
+import { WebLoginModal } from "./WebLoginModal";
 
 interface Props {
   visible: boolean;
@@ -27,6 +28,9 @@ export function LoginModal({ visible, onClose }: Props) {
   const [qrData, setQrData] = useState<string | null>(null);
   const [qrKey, setQrKey] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [webVisible, setWebVisible] = useState(false);
+  const [toast, setToast] = useState(false);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const qrRef = useRef<any>(null);
   const [status, setStatus] = useState<
     "loading" | "waiting" | "scanned" | "done" | "error"
@@ -68,8 +72,20 @@ export function LoginModal({ visible, onClose }: Props) {
     initQRCode();
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
+      if (toastTimer.current) clearTimeout(toastTimer.current);
     };
   }, [visible]);
+
+  /** 官方页 WebView 登录成功：Cookie 已写入 authStore，关 WebView → toast → 关本弹窗 */
+  function handleWebLoggedIn() {
+    setWebVisible(false);
+    setToast(true);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => {
+      setToast(false);
+      onClose();
+    }, 1400);
+  }
 
   useEffect(() => {
     if (!qrKey || status !== "waiting") return;
@@ -154,7 +170,7 @@ export function LoginModal({ visible, onClose }: Props) {
         style={[styles.sheetWrapper, { transform: [{ translateY: slideY }] }]}
       >
         <View style={[styles.sheet, { backgroundColor: theme.sheetBg }]}>
-          <Text style={[styles.title, { color: theme.modalText }]}>扫码登录</Text>
+          <Text style={[styles.title, { color: theme.modalText }]}>登录</Text>
           {status === "loading" && (
             <ActivityIndicator
               size="large"
@@ -198,11 +214,32 @@ export function LoginModal({ visible, onClose }: Props) {
               </TouchableOpacity>
             </View>
           )}
+          <View style={styles.divider}>
+            <View style={styles.dividerLine} />
+            <Text style={styles.dividerText}>或</Text>
+            <View style={styles.dividerLine} />
+          </View>
+          <TouchableOpacity style={styles.webBtn} onPress={() => setWebVisible(true)}>
+            <Text style={styles.webBtnTxt}>更多登录方式</Text>
+            <Ionicons name="chevron-forward" size={16} color="#00AEEC" />
+          </TouchableOpacity>
           <TouchableOpacity style={styles.closeBtn} onPress={onClose}>
             <Text style={styles.closeTxt}>关闭</Text>
           </TouchableOpacity>
+          {toast && (
+            <View style={styles.toastWrap} pointerEvents="none">
+              <View style={styles.toast}>
+                <Text style={styles.toastTxt}>✓ 登录成功</Text>
+              </View>
+            </View>
+          )}
         </View>
       </Animated.View>
+      <WebLoginModal
+        visible={webVisible}
+        onClose={() => setWebVisible(false)}
+        onLoggedIn={handleWebLoggedIn}
+      />
     </Modal>
   );
 }
@@ -254,4 +291,22 @@ const styles = StyleSheet.create({
   retryTxt: { fontSize: 13, color: "#fff", fontWeight: "600" },
   closeBtn: { padding: 12 },
   closeTxt: { fontSize: 14, color: "#00AEEC" },
+  divider: { flexDirection: "row", alignItems: "center", marginVertical: 16, width: "100%" },
+  dividerLine: { flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: "#eceff2" },
+  dividerText: { fontSize: 12, color: "#aaa", marginHorizontal: 10 },
+  webBtn: {
+    height: 46,
+    borderRadius: 23,
+    borderWidth: 1,
+    borderColor: "#d7ecfa",
+    backgroundColor: "#f5fcff",
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
+    width: "100%",
+  },
+  webBtnTxt: { fontSize: 15, color: "#00AEEC", fontWeight: "600" },
+  toastWrap: { position: "absolute", top: 60, left: 0, right: 0, alignItems: "center" },
+  toast: { backgroundColor: "rgba(0,0,0,0.78)", paddingHorizontal: 20, paddingVertical: 10, borderRadius: 20 },
+  toastTxt: { color: "#fff", fontSize: 13 },
 });

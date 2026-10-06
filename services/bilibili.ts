@@ -120,7 +120,7 @@ function extractLoginCookies(setCookie: unknown): { sessdata?: string; biliJct?:
  * 但 JS 层不一定能从 XHR 响应头里读到完整的 Set-Cookie（各端 RN 实现有差异），
  * 之前因此出现过"已登录但 bili_jct 缺失，关注/收藏等写操作不可用"的问题，这里做兜底。
  */
-async function getNativeLoginCookies(): Promise<{ sessdata?: string; biliJct?: string }> {
+export async function getNativeLoginCookies(): Promise<{ sessdata?: string; biliJct?: string }> {
   const out: { sessdata?: string; biliJct?: string } = {};
   if (!CookieManager) return out;
   for (const url of ['https://passport.bilibili.com', 'https://www.bilibili.com']) {
