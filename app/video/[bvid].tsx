@@ -60,6 +60,7 @@ export default function VideoDetailScreen() {
     pages,
     pageIndex,
     changePage,
+    switchingPageIdx,
     currentCid,
   } = useVideoDetail(bvid as string);
 
@@ -169,6 +170,10 @@ export default function VideoDetailScreen() {
         onNextPage={() => changePage(pageIndex + 1)}
         hasPrevPage={pages.length > 1 && pageIndex > 0}
         hasNextPage={pages.length > 1 && pageIndex < pages.length - 1}
+        pages={pages}
+        pageIndex={pageIndex}
+        onPageChange={(i) => changePage(i)}
+        switchingPageIdx={switchingPageIdx}
         upName={video?.owner?.name}
         upFace={video?.owner?.face ? proxyImageUrl(video.owner.face) : undefined}
         onlineCount={onlineCount}

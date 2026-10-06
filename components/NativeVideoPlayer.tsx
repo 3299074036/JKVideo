@@ -19,6 +19,7 @@ import {
   ActivityIndicator,
   Animated,
   useWindowDimensions,
+  ScrollView,
 } from "react-native";
 import Video, { VideoRef } from "react-native-video";
 import { LinearGradient } from "expo-linear-gradient";
@@ -69,6 +70,13 @@ export interface NativeVideoPlayerRef extends IVideoPlayer {
   setPaused: (v: boolean) => void;
 }
 
+/** 分 P 信息（全屏分 P 选择按钮用） */
+export interface VideoPageInfo {
+  cid: number;
+  part: string;
+  duration?: number;
+}
+
 interface Props {
   playData: PlayUrlResponse | null;
   qualities: { qn: number; desc: string }[];
@@ -94,6 +102,12 @@ interface Props {
   onNextPage?: () => void;
   hasPrevPage?: boolean;
   hasNextPage?: boolean;
+  /** 分 P 列表 / 当前下标 / 切换回调（全屏分 P 选择按钮用），仅全屏 */
+  pages?: VideoPageInfo[];
+  pageIndex?: number;
+  onPageChange?: (idx: number) => void;
+  /** 正在切换的分 P 下标（切换信号）；null 表示无切换/切换失败 */
+  switchingPageIdx?: number | null;
   /** 全屏顶栏 UP 主信息 */
   upName?: string;
   upFace?: string;
@@ -125,6 +139,10 @@ export const NativeVideoPlayer = forwardRef<NativeVideoPlayerRef, Props>(
       onNextPage,
       hasPrevPage,
       hasNextPage,
+      pages,
+      pageIndex,
+      onPageChange,
+      switchingPageIdx,
       upName,
       upFace,
       onlineCount,
@@ -159,7 +177,6 @@ export const NativeVideoPlayer = forwardRef<NativeVideoPlayerRef, Props>(
     const lastProgressUpdate = useRef(0);
 
     const [showQuality, setShowQuality] = useState(false);
-
     // 倍速
     const RATE_OPTIONS = [0.75, 1, 1.25, 1.5, 2];
     const [rate, setRate] = useState(1);
@@ -167,6 +184,10 @@ export const NativeVideoPlayer = forwardRef<NativeVideoPlayerRef, Props>(
 
     // 清晰度切换：保留进度 + loading 遮罩
     const [switching, setSwitching] = useState(false);
+    // 分 P 切换时的浮层文案（null 表示走清晰度切换文案）
+    const [pageSwitchText, setPageSwitchText] = useState<string | null>(null);
+    // 分 P 选择弹窗
+    const [showPages, setShowPages] = useState(false);
     const pendingSeekRef = useRef<number | null>(null);
     const prevQnRef = useRef(currentQn);
     const switchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -182,6 +203,7 @@ export const NativeVideoPlayer = forwardRef<NativeVideoPlayerRef, Props>(
         prevQnRef.current !== currentQn
       ) {
         pendingSeekRef.current = currentTimeRef.current;
+        setPageSwitchText(null);
         setSwitching(true);
         // 兜底：8s 内 onLoad 没触发就强制收起遮罩
         if (switchTimeoutRef.current) clearTimeout(switchTimeoutRef.current);
@@ -196,7 +218,39 @@ export const NativeVideoPlayer = forwardRef<NativeVideoPlayerRef, Props>(
       };
     }, []);
 
+    // 分 P 切换（切换信号）：保留旧画面不清空，用转圈浮层盖住，避免黑屏 + 裸"加载中"；
+    // 失败时信号回到 null，撤掉浮层（旧流继续可播）
+    const shownSwitchRef = useRef<number | null>(null);
+    useEffect(() => {
+      if (switchingPageIdx != null && switchingPageIdx !== shownSwitchRef.current) {
+        shownSwitchRef.current = switchingPageIdx;
+        const total = pages?.length ?? 0;
+        const title = pages?.[switchingPageIdx]?.part;
+        setPageSwitchText(
+          `正在切换 P${switchingPageIdx + 1}${total ? `/${total}` : ""}${
+            title ? `「${title}」` : ""
+          }…`,
+        );
+        setSwitching(true);
+        setCurrentTime(0);
+        if (switchTimeoutRef.current) clearTimeout(switchTimeoutRef.current);
+        switchTimeoutRef.current = setTimeout(() => setSwitching(false), 10000);
+        showAndReset();
+      } else if (switchingPageIdx == null && shownSwitchRef.current != null) {
+        shownSwitchRef.current = null;
+        setSwitching(false);
+        setPageSwitchText(null);
+        if (switchTimeoutRef.current) {
+          clearTimeout(switchTimeoutRef.current);
+          switchTimeoutRef.current = null;
+        }
+      }
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [switchingPageIdx]);
+
     const [buffered, setBuffered] = useState(0);
+    // 播放中缓冲（onBuffer）：中央小转圈，不盖遮罩
+    const [buffering, setBuffering] = useState(false);
     const [isSeeking, setIsSeeking] = useState(false);
     const isSeekingRef = useRef(false);
     // 拖动球位置用 Animated.Value 驱动：setValue 不触发 React 重渲染，
@@ -787,6 +841,7 @@ export const NativeVideoPlayer = forwardRef<NativeVideoPlayerRef, Props>(
               }
               if (switching) {
                 setSwitching(false);
+                setPageSwitchText(null);
                 if (switchTimeoutRef.current) {
                   clearTimeout(switchTimeoutRef.current);
                   switchTimeoutRef.current = null;
@@ -815,6 +870,9 @@ export const NativeVideoPlayer = forwardRef<NativeVideoPlayerRef, Props>(
               }
               console.warn("Video playback error:", e);
             }}
+            onBuffer={({ isBuffering }: { isBuffering: boolean }) =>
+              setBuffering(isBuffering)
+            }
           />
         ) : (
           // 没拿到 resolvedUrl 之前用主题色 + 封面占位，避免页面背景 → 纯黑的撞色
@@ -842,7 +900,16 @@ export const NativeVideoPlayer = forwardRef<NativeVideoPlayerRef, Props>(
         {switching && (
           <View style={styles.switchOverlay} pointerEvents="none">
             <ActivityIndicator color="#fff" size="small" />
-            <Text style={styles.switchText}>切换到 {currentDesc}…</Text>
+            <Text style={styles.switchText}>
+              {pageSwitchText ?? `切换到 ${currentDesc}…`}
+            </Text>
+          </View>
+        )}
+
+        {/* 播放中缓冲：中央小转圈（切换浮层/封面挡片显示时不重复） */}
+        {buffering && !switching && !coverVisible && (
+          <View style={styles.bufferOverlay} pointerEvents="none">
+            <ActivityIndicator color="#fff" size="small" />
           </View>
         )}
 
@@ -1037,6 +1104,20 @@ export const NativeVideoPlayer = forwardRef<NativeVideoPlayerRef, Props>(
                       />
                     </TouchableOpacity>
                     <View style={{ flex: 1 }} />
+                    {/* 分 P 选择：多分 P 时显示当前 P/总数，紧贴倍速左边 */}
+                    {(pages?.length ?? 0) > 1 && (
+                      <TouchableOpacity
+                        style={styles.ctrlBtn}
+                        onPress={() => {
+                          setShowPages(true);
+                          showAndReset();
+                        }}
+                      >
+                        <Text style={styles.qualityText}>
+                          {`${(pageIndex ?? 0) + 1}/${pages!.length}`}
+                        </Text>
+                      </TouchableOpacity>
+                    )}
                     <TouchableOpacity
                       style={styles.ctrlBtn}
                       onPress={() => setShowRate(true)}
@@ -1330,6 +1411,64 @@ export const NativeVideoPlayer = forwardRef<NativeVideoPlayerRef, Props>(
             </View>
           </TouchableOpacity>
         </Modal>
+
+        {/* 选分 P：多分 P 视频的全屏分 P 列表 */}
+        <Modal visible={showPages} transparent animationType="fade">
+          <TouchableOpacity
+            style={styles.modalOverlay}
+            activeOpacity={1}
+            onPress={() => setShowPages(false)}
+          >
+            <View
+              style={[styles.qualityList, { backgroundColor: theme.modalBg }]}
+            >
+              <Text style={[styles.qualityTitle, { color: theme.modalText }]}>
+                分P（{pages?.length ?? 0}）
+              </Text>
+              <ScrollView style={{ maxHeight: 340 }}>
+                {(pages ?? []).map((p, i) => (
+                  <TouchableOpacity
+                    key={p.cid}
+                    style={[
+                      styles.qualityItem,
+                      { borderTopColor: theme.modalBorder },
+                    ]}
+                    onPress={() => {
+                      setShowPages(false);
+                      if (i !== pageIndex) onPageChange?.(i);
+                      showAndReset();
+                    }}
+                  >
+                    <Text
+                      style={[
+                        styles.qualityItemText,
+                        styles.pageItemText,
+                        { color: theme.modalTextSub },
+                        i === pageIndex && styles.qualityItemActive,
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {`P${i + 1} ${p.part}`}
+                    </Text>
+                    {!!p.duration && p.duration > 0 && (
+                      <Text
+                        style={[
+                          styles.pageDuration,
+                          { color: theme.modalTextSub },
+                        ]}
+                      >
+                        {formatDuration(p.duration)}
+                      </Text>
+                    )}
+                    {i === pageIndex && (
+                      <Ionicons name="checkmark" size={16} color="#00AEEC" />
+                    )}
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+          </TouchableOpacity>
+        </Modal>
       </View>
     );
   },
@@ -1352,6 +1491,15 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "500",
   },
+  // 播放中缓冲：中央小转圈（无遮罩）
+  bufferOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  // 分 P 弹窗：标题占满剩余宽度、时长靠右
+  pageItemText: { flex: 1, marginRight: 8 },
+  pageDuration: { fontSize: 11, marginRight: 6 },
   topBar: {
     position: "absolute",
     top: 0,
@@ -1461,11 +1609,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  // 全屏顶栏：返回键下方的 UP 主信息
+  // 全屏顶栏：返回键下方的 UP 主信息，左边缘与返回箭头同列对齐
+  // （topBar paddingHorizontal 12 + topBtn padding 6 = 18）
   fsUpInfo: {
     position: "absolute",
     top: 58,
-    left: 14,
+    left: 18,
     flexDirection: "row",
     alignItems: "center",
   },
