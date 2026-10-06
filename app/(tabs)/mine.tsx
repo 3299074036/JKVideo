@@ -11,6 +11,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useRouter } from 'expo-router';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useAuthStore } from '../../store/authStore';
 import { LoginModal } from '../../components/LoginModal';
 import { useTheme } from '../../utils/theme';
@@ -60,42 +61,38 @@ export default function MineScreen() {
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: theme.bg }]} edges={['left', 'right']}>
-      <View style={[styles.topBar, { height: 44 + insets.top, paddingTop: insets.top, backgroundColor: theme.card, borderBottomColor: theme.border }]}>
-        <Text style={[styles.topTitle, { color: theme.text }]}>我的</Text>
-      </View>
-
-      <ScrollView contentContainerStyle={styles.content}>
-        {/* 个人信息区：头像 / 昵称 / UID */}
-        <TouchableOpacity
-          style={[styles.profile, { backgroundColor: theme.card }]}
-          onPress={() => { if (!isLoggedIn) setShowLogin(true); }}
-          activeOpacity={isLoggedIn ? 1 : 0.7}
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        {/* 顶部渐变头图 + 个人信息 */}
+        <LinearGradient
+          colors={['#E3F4FD', theme.card]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 0, y: 1 }}
+          style={[styles.header, { paddingTop: insets.top + 28 }]}
         >
-          {isLoggedIn && face ? (
-            <Image
-              source={{ uri: proxyImageUrl(face) }}
-              style={styles.avatar}
-              contentFit="cover"
-            />
-          ) : (
-            <View style={[styles.avatar, styles.avatarPlaceholder, { backgroundColor: theme.inputBg }]}>
-              <Ionicons name="person" size={36} color={theme.iconDefault} />
-            </View>
-          )}
-          <View style={styles.profileInfo}>
+          <TouchableOpacity
+            onPress={() => { if (!isLoggedIn) setShowLogin(true); }}
+            activeOpacity={isLoggedIn ? 1 : 0.7}
+            style={styles.profileCenter}
+          >
+            {isLoggedIn && face ? (
+              <Image
+                source={{ uri: proxyImageUrl(face) }}
+                style={styles.avatar}
+                contentFit="cover"
+              />
+            ) : (
+              <View style={[styles.avatar, styles.avatarPlaceholder, { backgroundColor: theme.inputBg }]}>
+                <Ionicons name="person" size={40} color={theme.iconDefault} />
+              </View>
+            )}
             <Text style={[styles.nickname, { color: theme.text }]}>
               {isLoggedIn ? username || 'B站用户' : '点击登录'}
             </Text>
-            {isLoggedIn && uid ? (
-              <Text style={[styles.uid, { color: theme.textSub }]}>UID: {uid}</Text>
-            ) : (
-              <Text style={[styles.uid, { color: theme.textSub }]}>登录后同步观看历史与收藏</Text>
-            )}
-          </View>
-          {!isLoggedIn && (
-            <Ionicons name="chevron-forward" size={20} color={theme.iconDefault} />
-          )}
-        </TouchableOpacity>
+            <Text style={[styles.uid, { color: theme.textSub }]}>
+              {isLoggedIn && uid ? `UID: ${uid}` : '登录后同步观看历史与收藏'}
+            </Text>
+          </TouchableOpacity>
+        </LinearGradient>
 
         {/* 功能入口 */}
         <View style={[styles.menuGroup, { backgroundColor: theme.card }]}>
@@ -109,7 +106,9 @@ export default function MineScreen() {
               onPress={() => handleMenu(m)}
               activeOpacity={0.7}
             >
-              <Ionicons name={m.icon} size={22} color="#00AEEC" style={styles.menuIcon} />
+              <View style={[styles.menuIconWrap, { backgroundColor: '#E8F7FE' }]}>
+                <Ionicons name={m.icon} size={20} color="#00AEEC" />
+              </View>
               <Text style={[styles.menuLabel, { color: theme.text }]}>{m.label}</Text>
               <Ionicons name="chevron-forward" size={18} color={theme.iconDefault} />
             </TouchableOpacity>
@@ -135,38 +134,54 @@ export default function MineScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1 },
-  topBar: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderBottomWidth: StyleSheet.hairlineWidth,
+  content: { paddingBottom: 24 },
+  header: {
+    paddingBottom: 28,
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
   },
-  backBtn: { width: 40, alignItems: 'center' },
-  topTitle: { fontSize: 17, fontWeight: '600' },
-  content: { padding: 12, gap: 12 },
-  profile: {
-    flexDirection: 'row',
+  profileCenter: {
     alignItems: 'center',
-    borderRadius: 12,
-    padding: 16,
+    gap: 8,
   },
-  avatar: { width: 64, height: 64, borderRadius: 32, backgroundColor: '#eee' },
+  avatar: {
+    width: 84,
+    height: 84,
+    borderRadius: 42,
+    backgroundColor: '#eee',
+    borderWidth: 3,
+    borderColor: '#fff',
+  },
   avatarPlaceholder: { alignItems: 'center', justifyContent: 'center' },
-  profileInfo: { flex: 1, marginLeft: 14, gap: 4 },
-  nickname: { fontSize: 18, fontWeight: '600' },
+  nickname: { fontSize: 20, fontWeight: '700', marginTop: 4 },
   uid: { fontSize: 13 },
-  menuGroup: { borderRadius: 12, overflow: 'hidden' },
+  menuGroup: {
+    borderRadius: 16,
+    overflow: 'hidden',
+    marginHorizontal: 16,
+    marginTop: 16,
+  },
   menuRow: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 14,
     paddingHorizontal: 16,
   },
-  menuIcon: { marginRight: 12 },
-  menuLabel: { flex: 1, fontSize: 15 },
-  logoutBtn: {
-    borderRadius: 12,
-    paddingVertical: 14,
+  menuIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
   },
-  logoutText: { fontSize: 15, fontWeight: '500' },
+  menuLabel: { flex: 1, fontSize: 15, fontWeight: '500' },
+  logoutBtn: {
+    borderRadius: 16,
+    paddingVertical: 15,
+    alignItems: 'center',
+    marginHorizontal: 16,
+    marginTop: 16,
+  },
+  logoutText: { fontSize: 15, fontWeight: '600' },
 });

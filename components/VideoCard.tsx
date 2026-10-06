@@ -76,7 +76,7 @@ const styles = StyleSheet.create({
     width: CARD_WIDTH,
     marginBottom: 6,
     backgroundColor: "#fff",
-    borderRadius: 6,
+    borderRadius: 10,
     overflow: "hidden",
   },
   thumbContainer: { position: "relative" },
