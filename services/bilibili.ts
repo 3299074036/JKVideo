@@ -616,6 +616,16 @@ export async function getLiveDanmakuHistory(roomId: number): Promise<{
   return { danmakus, adminMsgs };
 }
 
+/** 当前分 P 的在线观看人数（/x/player/online/total），失败返回 0 */
+export async function getOnlineCount(bvid: string, cid: number): Promise<number> {
+  try {
+    const res = await api.get('/x/player/online/total', { params: { bvid, cid } });
+    return res.data?.data?.total ?? 0;
+  } catch {
+    return 0;
+  }
+}
+
 export async function getDanmaku(cid: number): Promise<DanmakuItem[]> {
   return withRetry(async () => {
     if (isWeb) {

@@ -13,7 +13,12 @@ export function useVideoDetail(bvid: string) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [initialTime, setInitialTime] = useState(0);
+  // 分 P：当前选中的分 P 下标，默认第 1 个
+  const [pageIndex, setPageIndex] = useState(0);
   const cidRef = useRef<number>(0);
+  const qnRef = useRef<number>(0);
+  const videoRef = useRef<VideoItem | null>(null);
+  const pageIndexRef = useRef(0);
   const isLoggedIn = useAuthStore(s => s.isLoggedIn);
   const trafficSaving = useSettingsStore(s => s.trafficSaving);
   const defaultQn = trafficSaving ? 16 : 126;
@@ -22,6 +27,7 @@ export function useVideoDetail(bvid: string) {
     const data = await getPlayUrl(bvid, cid, qn);
     setPlayData(data);
     setCurrentQn(data.quality);
+    qnRef.current = data.quality;
     if (updateList && data.accept_quality?.length) {
       setQualities(
         data.accept_quality.map((q, i) => ({
@@ -36,12 +42,32 @@ export function useVideoDetail(bvid: string) {
     await fetchPlayData(cidRef.current, qn);
   }
 
+  /** 切换分 P：按新分 P 的 cid 重拉播放流，进度从 0 开始 */
+  async function changePage(idx: number) {
+    const pages = videoRef.current?.pages;
+    if (!pages || idx < 0 || idx >= pages.length || idx === pageIndexRef.current) return;
+    const cid = pages[idx].cid;
+    pageIndexRef.current = idx;
+    setPageIndex(idx);
+    setPlayData(null);
+    setInitialTime(0);
+    cidRef.current = cid;
+    try {
+      await fetchPlayData(cid, qnRef.current || defaultQn, true);
+    } catch (e: any) {
+      setError(e.message ?? 'Load failed');
+    }
+  }
+
   useEffect(() => {
     // bvid 切换时立刻清空旧数据，防止上一支视频的播放器/简介/清晰度短暂"残影"造成抖动
     setVideo(null);
     setPlayData(null);
     setQualities([]);
     setCurrentQn(0);
+    setPageIndex(0);
+    pageIndexRef.current = 0;
+    videoRef.current = null;
     cidRef.current = 0;
     async function fetchData() {
       try {
@@ -50,6 +76,7 @@ export function useVideoDetail(bvid: string) {
         setInitialTime(usePlayProgressStore.getState().get(bvid));
         const detail = await getVideoDetail(bvid);
         setVideo(detail);
+        videoRef.current = detail;
         const cid = detail.pages?.[0]?.cid ?? detail.cid as number;
         cidRef.current = cid;
         await fetchPlayData(cid, defaultQn, true);
@@ -90,5 +117,21 @@ export function useVideoDetail(bvid: string) {
     };
   }, [isLoggedIn]);
 
-  return { video, playData, loading, error, qualities, currentQn, changeQuality, initialTime };
+  const pages = video?.pages ?? [];
+  const currentCid = video?.pages?.[pageIndex]?.cid ?? (video?.cid as number | undefined);
+
+  return {
+    video,
+    playData,
+    loading,
+    error,
+    qualities,
+    currentQn,
+    changeQuality,
+    initialTime,
+    pages,
+    pageIndex,
+    changePage,
+    currentCid,
+  };
 }

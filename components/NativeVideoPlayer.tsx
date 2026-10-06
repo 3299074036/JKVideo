@@ -6,7 +6,7 @@ import React, {
   forwardRef,
   useImperativeHandle,
 } from "react";
-import { formatDuration } from "../utils/format";
+import { formatCount, formatDuration } from "../utils/format";
 import {
   View,
   StyleSheet,
@@ -89,6 +89,15 @@ interface Props {
   onBack?: () => void;
   /** 视频封面 URL：作为 poster 覆盖在 <Video> 上，首帧出来前用来盖住黑屏 */
   coverUrl?: string;
+  /** 上一集 / 下一集（分 P 切换），仅全屏 */
+  onPrevPage?: () => void;
+  onNextPage?: () => void;
+  hasPrevPage?: boolean;
+  hasNextPage?: boolean;
+  /** 全屏顶栏 UP 主信息 */
+  upName?: string;
+  upFace?: string;
+  onlineCount?: number;
 }
 
 export const NativeVideoPlayer = forwardRef<NativeVideoPlayerRef, Props>(
@@ -110,6 +119,13 @@ export const NativeVideoPlayer = forwardRef<NativeVideoPlayerRef, Props>(
       onDanmakuListPress,
       onBack,
       coverUrl,
+      onPrevPage,
+      onNextPage,
+      hasPrevPage,
+      hasNextPage,
+      upName,
+      upFace,
+      onlineCount,
     }: Props,
     ref,
   ) {
@@ -209,6 +225,16 @@ export const NativeVideoPlayer = forwardRef<NativeVideoPlayerRef, Props>(
       { mode: "cover", label: "等比裁切铺满" },
       { mode: "stretch", label: "拉伸铺满" },
     ];
+    // 底栏"画面"按钮显示的短标签
+    const RESIZE_SHORT: Record<ResizeMode, string> = {
+      contain: "适应",
+      cover: "铺满",
+      stretch: "拉伸",
+    };
+
+    // 全屏锁定：锁定后禁用手势和控制栏，只留解锁键
+    const [locked, setLocked] = useState(false);
+    const lockedRef = useRef(false);
 
     // 播放器音量（手势调节用，0..1）
     const [volume, setVolume] = useState(1);
@@ -329,6 +355,19 @@ export const NativeVideoPlayer = forwardRef<NativeVideoPlayerRef, Props>(
       });
     }, [resetHideTimer]);
 
+    // 锁定/解锁切换：锁定后隐藏控制栏，只留右侧解锁键
+    const toggleLock = useCallback(() => {
+      const next = !lockedRef.current;
+      lockedRef.current = next;
+      setLocked(next);
+      if (next) {
+        if (hideTimer.current) clearTimeout(hideTimer.current);
+        setShowControls(false);
+      } else {
+        showAndReset();
+      }
+    }, [showAndReset]);
+
     // 组件卸载时清理隐藏计时器，避免内存泄漏和潜在的状态更新错误。依赖项为空数组确保只在挂载和卸载时执行一次。
     useEffect(() => {
       resetHideTimer();
@@ -360,6 +399,8 @@ export const NativeVideoPlayer = forwardRef<NativeVideoPlayerRef, Props>(
     const singleTapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const handleFsTap = useCallback(
       (x: number) => {
+        // 锁定时单击不做任何事，只能点右侧解锁键
+        if (lockedRef.current) return;
         const half = x < SCREEN_W / 2 ? "l" : "r";
         const now = Date.now();
         const last = tapRef.current;
@@ -403,8 +444,8 @@ export const NativeVideoPlayer = forwardRef<NativeVideoPlayerRef, Props>(
     }>({ active: false, type: null, sx: 0, sy: 0, startB: 0.5, startV: 1, startT: 0, hTarget: 0 });
     const fsPan = useRef(
       PanResponder.create({
-        onStartShouldSetPanResponder: () => true,
-        onMoveShouldSetPanResponder: () => true,
+        onStartShouldSetPanResponder: () => !lockedRef.current,
+        onMoveShouldSetPanResponder: () => !lockedRef.current,
         onPanResponderGrant: (e) => {
           const g = gestRef.current;
           g.active = false;
@@ -521,8 +562,8 @@ export const NativeVideoPlayer = forwardRef<NativeVideoPlayerRef, Props>(
     // 缩略图换帧 50ms 节流；松手时 seek 到目标时间并恢复自动同步。
     const panResponder = useRef(
       PanResponder.create({
-        onStartShouldSetPanResponder: () => true,
-        onMoveShouldSetPanResponder: () => true,
+        onStartShouldSetPanResponder: () => !lockedRef.current,
+        onMoveShouldSetPanResponder: () => !lockedRef.current,
         onPanResponderGrant: (_, gs) => {
           isSeekingRef.current = true;
           setIsSeeking(true);
@@ -636,6 +677,47 @@ export const NativeVideoPlayer = forwardRef<NativeVideoPlayerRef, Props>(
         </View>
       );
     };
+
+    // 进度条：小窗口独占一行，全屏时嵌在"时间 / 进度条 / 时长"第一行里
+    const trackView = (extraStyle?: object) => (
+      <View
+        ref={trackRef}
+        style={[styles.trackWrapper, extraStyle]}
+        onLayout={measureTrack}
+        {...panResponder.panHandlers}
+      >
+        <View style={styles.track}>
+          <View
+            style={[
+              styles.trackLayer,
+              {
+                width: `${bufferedRatio * 100}%` as any,
+                backgroundColor: "rgba(255,255,255,0.35)",
+              },
+            ]}
+          />
+          <Animated.View
+            style={[
+              styles.trackLayer,
+              {
+                width: touchAnimX,
+                backgroundColor: "#00AEEC",
+              },
+            ]}
+          />
+        </View>
+        <Animated.View
+          style={[
+            styles.ball,
+            isSeeking && styles.ballActive,
+            {
+              left: 0,
+              transform: [{ translateX: ballTranslate }],
+            },
+          ]}
+        />
+      </View>
+    );
 
     return (
       <View
@@ -813,18 +895,6 @@ export const NativeVideoPlayer = forwardRef<NativeVideoPlayerRef, Props>(
                 </TouchableOpacity>
               )}
               <View style={{ flex: 1 }} />
-              {isFullscreen && (
-                <TouchableOpacity
-                  style={styles.topBtn}
-                  onPress={() => {
-                    setShowResize(true);
-                    showAndReset();
-                  }}
-                  hitSlop={6}
-                >
-                  <Ionicons name="scan" size={20} color="#fff" />
-                </TouchableOpacity>
-              )}
               {onDanmakuListPress && (
                 <TouchableOpacity
                   style={styles.topBtn}
@@ -837,6 +907,25 @@ export const NativeVideoPlayer = forwardRef<NativeVideoPlayerRef, Props>(
                 </TouchableOpacity>
               )}
             </LinearGradient>
+
+            {/* 全屏：返回键下方的 UP 主头像 / 昵称 / 在线人数 */}
+            {isFullscreen && !!upName && (
+              <View style={styles.fsUpInfo} pointerEvents="none">
+                {!!upFace && (
+                  <Image source={{ uri: upFace }} style={styles.upAvatar} />
+                )}
+                <View>
+                  <Text style={styles.upName} numberOfLines={1}>
+                    {upName}
+                  </Text>
+                  {!!onlineCount && onlineCount > 0 && (
+                    <Text style={styles.upOnline}>
+                      {formatCount(onlineCount)}人正在看
+                    </Text>
+                  )}
+                </View>
+              </View>
+            )}
 
             <TouchableOpacity
               style={styles.centerBtn}
@@ -859,94 +948,181 @@ export const NativeVideoPlayer = forwardRef<NativeVideoPlayerRef, Props>(
               style={styles.bottomBar}
               pointerEvents="box-none"
             >
-              <View
-                ref={trackRef}
-                style={styles.trackWrapper}
-                onLayout={measureTrack}
-                {...panResponder.panHandlers}
-              >
-                <View style={styles.track}>
-                  <View
-                    style={[
-                      styles.trackLayer,
-                      {
-                        width: `${bufferedRatio * 100}%` as any,
-                        backgroundColor: "rgba(255,255,255,0.35)",
-                      },
-                    ]}
-                  />
-                  <Animated.View
-                    style={[
-                      styles.trackLayer,
-                      {
-                        width: touchAnimX,
-                        backgroundColor: "#00AEEC",
-                      },
-                    ]}
-                  />
-                </View>
-                <Animated.View
-                  style={[
-                    styles.ball,
-                    isSeeking && styles.ballActive,
-                    {
-                      left: 0,
-                      transform: [{ translateX: ballTranslate }],
-                    },
-                  ]}
-                />
-              </View>
-              {/* Controls */}
-
-              <View style={styles.ctrlRow}>
-                <TouchableOpacity
-                  onPress={() => {
-                    setPaused((p) => !p);
-                    showAndReset();
-                  }}
-                  style={styles.ctrlBtn}
-                >
-                  <Ionicons
-                    name={paused ? "play" : "pause"}
-                    size={16}
-                    color="#fff"
-                  />
-                </TouchableOpacity>
-                <Text style={styles.timeText}>
-                  {formatDuration(Math.floor(currentTime))}
-                </Text>
-                <View style={{ flex: 1 }} />
-                <Text style={styles.timeText}>{formatDuration(duration)}</Text>
-                <TouchableOpacity
-                  style={styles.ctrlBtn}
-                  onPress={() => setShowRate(true)}
-                >
-                  <Text style={styles.qualityText}>{rate === 1 ? "倍速" : `${rate}x`}</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.ctrlBtn}
-                  onPress={() => setShowQuality(true)}
-                >
-                  <Text style={styles.qualityText}>{currentDesc}</Text>
-                </TouchableOpacity>
-                {isFullscreen && (
-                  <TouchableOpacity
-                    style={styles.ctrlBtn}
-                    onPress={() => setShowDanmaku((v) => !v)}
-                  >
-                    <Ionicons
-                      name={showDanmaku ? "chatbubbles" : "chatbubbles-outline"}
-                      size={16}
-                      color="#fff"
-                    />
-                  </TouchableOpacity>
-                )}
-                <TouchableOpacity style={styles.ctrlBtn} onPress={onFullscreen}>
-                  <Ionicons name="expand" size={18} color="#fff" />
-                </TouchableOpacity>
-              </View>
+              {isFullscreen ? (
+                <>
+                  {/* 第一行：当前时间 / 进度条 / 总时长 */}
+                  <View style={styles.fsTimeRow}>
+                    <Text style={styles.timeText}>
+                      {formatDuration(Math.floor(currentTime))}
+                    </Text>
+                    {trackView(styles.fsTrack)}
+                    <Text style={styles.timeText}>
+                      {formatDuration(duration)}
+                    </Text>
+                  </View>
+                  {/* 第二行：左暂停/上一集/下一集/弹幕，右倍速值/画质值/画面值/退出全屏 */}
+                  <View style={styles.ctrlRow}>
+                    <TouchableOpacity
+                      onPress={() => {
+                        setPaused((p) => !p);
+                        showAndReset();
+                      }}
+                      style={styles.ctrlBtn}
+                    >
+                      <Ionicons
+                        name={paused ? "play" : "pause"}
+                        size={20}
+                        color="#fff"
+                      />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => {
+                        onPrevPage?.();
+                        showAndReset();
+                      }}
+                      disabled={!hasPrevPage}
+                      style={[
+                        styles.ctrlBtn,
+                        !hasPrevPage && styles.disabledBtn,
+                      ]}
+                    >
+                      <Ionicons
+                        name="play-skip-back"
+                        size={18}
+                        color="#fff"
+                      />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => {
+                        onNextPage?.();
+                        showAndReset();
+                      }}
+                      disabled={!hasNextPage}
+                      style={[
+                        styles.ctrlBtn,
+                        !hasNextPage && styles.disabledBtn,
+                      ]}
+                    >
+                      <Ionicons
+                        name="play-skip-forward"
+                        size={18}
+                        color="#fff"
+                      />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.ctrlBtn}
+                      onPress={() => {
+                        setShowDanmaku((v) => !v);
+                        showAndReset();
+                      }}
+                    >
+                      <Ionicons
+                        name={
+                          showDanmaku
+                            ? "chatbubbles"
+                            : "chatbubbles-outline"
+                        }
+                        size={18}
+                        color="#fff"
+                      />
+                    </TouchableOpacity>
+                    <View style={{ flex: 1 }} />
+                    <TouchableOpacity
+                      style={styles.ctrlBtn}
+                      onPress={() => setShowRate(true)}
+                    >
+                      <Text style={styles.qualityText}>{`${rate}x`}</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.ctrlBtn}
+                      onPress={() => setShowQuality(true)}
+                    >
+                      <Text style={styles.qualityText}>{currentDesc}</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.ctrlBtn}
+                      onPress={() => {
+                        setShowResize(true);
+                        showAndReset();
+                      }}
+                    >
+                      <Text style={styles.qualityText}>
+                        {RESIZE_SHORT[resizeMode]}
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.ctrlBtn}
+                      onPress={onFullscreen}
+                    >
+                      <Ionicons name="contract" size={18} color="#fff" />
+                    </TouchableOpacity>
+                  </View>
+                </>
+              ) : (
+                <>
+                  {trackView()}
+                  {/* Controls */}
+                  <View style={styles.ctrlRow}>
+                    <TouchableOpacity
+                      onPress={() => {
+                        setPaused((p) => !p);
+                        showAndReset();
+                      }}
+                      style={styles.ctrlBtn}
+                    >
+                      <Ionicons
+                        name={paused ? "play" : "pause"}
+                        size={16}
+                        color="#fff"
+                      />
+                    </TouchableOpacity>
+                    <Text style={styles.timeText}>
+                      {formatDuration(Math.floor(currentTime))}
+                    </Text>
+                    <View style={{ flex: 1 }} />
+                    <Text style={styles.timeText}>
+                      {formatDuration(duration)}
+                    </Text>
+                    <TouchableOpacity
+                      style={styles.ctrlBtn}
+                      onPress={() => setShowRate(true)}
+                    >
+                      <Text style={styles.qualityText}>
+                        {rate === 1 ? "倍速" : `${rate}x`}
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.ctrlBtn}
+                      onPress={() => setShowQuality(true)}
+                    >
+                      <Text style={styles.qualityText}>{currentDesc}</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.ctrlBtn}
+                      onPress={onFullscreen}
+                    >
+                      <Ionicons name="expand" size={18} color="#fff" />
+                    </TouchableOpacity>
+                  </View>
+                </>
+              )}
             </LinearGradient>
           </>
+        )}
+
+        {/* 全屏锁定键：右侧边缘，不跟随控制栏显隐，锁定时也要能点到 */}
+        {isFullscreen && (
+          <TouchableOpacity
+            style={styles.lockBtn}
+            onPress={toggleLock}
+            hitSlop={10}
+          >
+            <Ionicons
+              name={locked ? "lock-closed" : "lock-open-outline"}
+              size={20}
+              color="#fff"
+            />
+          </TouchableOpacity>
         )}
 
         {renderThumbnail()}
@@ -1249,6 +1425,57 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingHorizontal: 8,
     marginTop: 4,
+  },
+  // 全屏第一行：时间 / 进度条 / 时长
+  fsTimeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 12,
+  },
+  fsTrack: {
+    flex: 1,
+    marginHorizontal: 8,
+  },
+  disabledBtn: { opacity: 0.3 },
+  // 全屏右侧边缘锁定键
+  lockBtn: {
+    position: "absolute",
+    right: 0,
+    top: "50%",
+    marginTop: -32,
+    width: 40,
+    height: 64,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    borderTopLeftRadius: 20,
+    borderBottomLeftRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  // 全屏顶栏：返回键下方的 UP 主信息
+  fsUpInfo: {
+    position: "absolute",
+    top: 58,
+    left: 14,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  upAvatar: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    marginRight: 8,
+    backgroundColor: "rgba(255,255,255,0.15)",
+  },
+  upName: {
+    color: "#fff",
+    fontSize: 13,
+    fontWeight: "600",
+    maxWidth: 220,
+  },
+  upOnline: {
+    color: "rgba(255,255,255,0.7)",
+    fontSize: 11,
+    marginTop: 2,
   },
   ctrlBtn: { paddingHorizontal: 8, paddingVertical: 4 },
   timeText: {
