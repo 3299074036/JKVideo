@@ -333,6 +333,9 @@ export const NativeVideoPlayer = forwardRef<NativeVideoPlayerRef, Props>(
 
     // BUG-L-13：命令式 API（seek/pause/resume/getCurrentTime/setPaused）经核查无任何调用方，
     // 已删除 useImperativeHandle；ref 透传保留以兼容 forwardRef 签名。
+    // 注意：videoRef 本体必须保留——<Video ref={videoRef}> 与各处 videoRef.current?.seek() 都依赖它，
+    // 删 useImperativeHandle 时误删声明会导致运行时 ReferenceError（2026-10-06 已踩坑）。
+    const videoRef = useRef<VideoRef>(null);
 
     const currentDesc =
       qualities.find((q) => q.qn === currentQn)?.desc ??
