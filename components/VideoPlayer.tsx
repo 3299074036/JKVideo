@@ -98,16 +98,31 @@ export function VideoPlayer({ playData, qualities, currentQn, onQualityChange, b
       await ScreenOrientation?.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
   };
 
-  // 首次进全屏时转屏会触发 _layout 重渲染，它的 expo-status-bar 会把 hidden
-  // 覆盖回 false（第二次进全屏不再重渲染，所以正常）。Modal 挂载后延迟补设，
-  // 确保第一次进全屏状态栏也隐藏。
+  // 全屏状态栏隐藏：转屏（orientation 变化）会重置系统窗口的 insets 状态，
+  // 把 hide 掉的状态栏重新顶出来，而且转屏落定的时机各机型不一，固定延迟盖不住。
+  // 改成三保险：① pushStackEntry 让 hidden 在声明式栈里置顶（RN 官方推荐做法，
+  // 退出时 pop 恢复）；② 监听转屏完成事件，落定后补一次隐藏；③ 全屏期间每 800ms
+  // 兜底重申一次原生隐藏，确保状态栏不会被任何时机顶回来。
   useEffect(() => {
     if (!fullscreen) return;
-    const t1 = setTimeout(() => StatusBar.setHidden(true, 'fade'), 150);
-    const t2 = setTimeout(() => StatusBar.setHidden(true, 'fade'), 600);
+    const entry = StatusBar.pushStackEntry({ hidden: true });
+    const rehide = () => StatusBar.setHidden(true);
+    rehide();
+    let orientationSub: { remove(): void } | null = null;
+    try {
+      orientationSub =
+        ScreenOrientation?.addOrientationChangeListener(() => {
+          // 转屏落定后再补一次（转屏会重置系统窗口 insets）
+          setTimeout(rehide, 300);
+        }) ?? null;
+    } catch {}
+    const timer = setInterval(rehide, 800);
     return () => {
-      clearTimeout(t1);
-      clearTimeout(t2);
+      clearInterval(timer);
+      try {
+        orientationSub?.remove();
+      } catch {}
+      StatusBar.popStackEntry(entry);
     };
   }, [fullscreen]);
 
