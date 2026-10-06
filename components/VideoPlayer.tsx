@@ -59,11 +59,14 @@ export function VideoPlayer({ playData, qualities, currentQn, onQualityChange, b
     if (Platform.OS !== 'web')
       await ScreenOrientation?.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE_RIGHT);
     setFullscreen(true);
+    // 命令式隐藏状态栏：_layout 里有全局 expo-status-bar，会盖掉声明式的 hidden
+    StatusBar.setHidden(true, 'fade');
     await setImmersive(true);
   };
 
   const handleExitFullscreen = async () => {
     setFullscreen(false);
+    StatusBar.setHidden(false, 'fade');
     await setImmersive(false);
     if (Platform.OS !== 'web')
       await ScreenOrientation?.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
@@ -73,6 +76,7 @@ export function VideoPlayer({ playData, qualities, currentQn, onQualityChange, b
     return () => {
       if (Platform.OS !== 'web')
         ScreenOrientation?.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+      StatusBar.setHidden(false);
       setImmersive(false);
     };
   }, []);
