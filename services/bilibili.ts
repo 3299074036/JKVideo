@@ -1000,10 +1000,6 @@ export async function getRegionFeed(feedRid: number, displayId = 1): Promise<Vid
   );
   const res = await api.get('/x/web-interface/region/feed/rcmd', { params: signed });
   const items: any[] = res.data?.data?.archives ?? [];
-  if (items.length === 0 && feedRid === 1007 && displayId === 1) {
-    // 鬼畜推荐流暂无数据，首屏回退到分区排行榜兜底
-    return getRanking(119);
-  }
   return items
     .filter(item => item.bvid && item.title)
     .map(item => ({
