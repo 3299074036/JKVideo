@@ -1000,6 +1000,10 @@ export async function getRegionFeed(feedRid: number, displayId = 1): Promise<Vid
   );
   const res = await api.get('/x/web-interface/region/feed/rcmd', { params: signed });
   const items: any[] = res.data?.data?.archives ?? [];
+  if (items.length === 0 && feedRid === 1007 && displayId === 1) {
+    // 鬼畜推荐流暂无数据，首屏回退到分区排行榜兜底
+    return getRanking(119);
+  }
   return items
     .filter(item => item.bvid && item.title)
     .map(item => ({
@@ -1015,6 +1019,7 @@ export const REGION_FEED_CHANNELS: { rid: number; name: string }[] = [
   { rid: 1003, name: '音乐' },
   { rid: 1004, name: '舞蹈' },
   { rid: 1008, name: '游戏' },
+  { rid: 1007, name: '鬼畜' },
   { rid: 1010, name: '知识' },
   { rid: 1012, name: '科技' },
   { rid: 1018, name: '运动' },

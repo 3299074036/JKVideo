@@ -40,6 +40,7 @@ const REGION_ICONS: Record<number, string> = {
   1003: "musical-notes-outline", // 音乐
   1004: "accessibility-outline", // 舞蹈
   1008: "game-controller-outline", // 游戏
+  1007: "happy-outline", // 鬼畜
   1010: "bulb-outline", // 知识
   1012: "phone-portrait-outline", // 科技
   1018: "fitness-outline", // 运动
