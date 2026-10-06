@@ -9,10 +9,12 @@ export async function buildDashMpdUri(
   playData: PlayUrlResponse,
   qn: number,
   bvid?: string,
+  cid?: number,
 ): Promise<string> {
   const xml = buildMpdXml(playData, qn);
-  // 带 bvid 区分，避免不同视频在同一 qn 上复用同一文件名导致命中过期 MPD
-  const suffix = bvid ? `${bvid}_${qn}` : String(qn);
+  // 带 bvid + cid 区分：同一视频不同分 P 必须用不同文件名，
+  // 否则切分 P 时 URI 不变，<Video key> 不变，播放器不会重载新流
+  const suffix = [bvid, cid, qn].filter((v) => v != null).join("_") || String(qn);
   const path = `${FileSystem.cacheDirectory}bili_dash_${suffix}.mpd`;
   await FileSystem.writeAsStringAsync(path, xml, { encoding: FileSystem.EncodingType.UTF8 });
   return path;

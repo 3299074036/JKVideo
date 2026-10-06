@@ -60,7 +60,6 @@ export default function VideoDetailScreen() {
     pages,
     pageIndex,
     changePage,
-    switchingPageIdx,
     currentCid,
   } = useVideoDetail(bvid as string);
 
@@ -74,6 +73,8 @@ export default function VideoDetailScreen() {
     follower: number;
     archiveCount: number;
   } | null>(null);
+  // 全屏状态上提：全屏时关掉 SafeAreaView 的 edges，让全屏 overlay 真正铺满
+  const [fullscreen, setFullscreen] = useState(false);
 
   // 切换视频时把和老视频绑定的瞬态状态全部清掉，避免新页面短暂显示老弹幕/老 UP 主统计/老开着的 Sheet
   useEffect(() => {
@@ -153,8 +154,13 @@ export default function VideoDetailScreen() {
   const shareUrl = bvid ? `https://www.bilibili.com/video/${bvid}` : undefined;
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: theme.card }]}>
+    <SafeAreaView
+      edges={fullscreen ? [] : undefined}
+      style={[styles.safe, { backgroundColor: theme.card }]}
+    >
       <VideoPlayer
+        fullscreen={fullscreen}
+        onFullscreenChange={setFullscreen}
         playData={playData}
         qualities={qualities}
         currentQn={currentQn}
@@ -173,7 +179,6 @@ export default function VideoDetailScreen() {
         pages={pages}
         pageIndex={pageIndex}
         onPageChange={(i) => changePage(i)}
-        switchingPageIdx={switchingPageIdx}
         upName={video?.owner?.name}
         upFace={video?.owner?.face ? proxyImageUrl(video.owner.face) : undefined}
         onlineCount={onlineCount}
