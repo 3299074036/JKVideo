@@ -34,6 +34,7 @@ import { getVideoShot } from "../services/bilibili";
 import DanmakuOverlay from "./DanmakuOverlay";
 import { useTheme } from "../utils/theme";
 import { usePlayProgressStore } from "../store/playProgressStore";
+import * as Brightness from "expo-brightness";
 
 const BAR_H = 3;
 // 进度球尺寸
@@ -199,6 +200,37 @@ export const NativeVideoPlayer = forwardRef<NativeVideoPlayerRef, Props>(
     const [shots, setShots] = useState<VideoShotData | null>(null);
     const [showDanmaku, setShowDanmaku] = useState(true);
 
+    // 填充模式：contain 适应屏幕 / cover 等比裁切铺满 / stretch 拉伸铺满
+    type ResizeMode = "contain" | "cover" | "stretch";
+    const [resizeMode, setResizeMode] = useState<ResizeMode>("contain");
+    const [showResize, setShowResize] = useState(false);
+    const RESIZE_OPTIONS: { mode: ResizeMode; label: string }[] = [
+      { mode: "contain", label: "适应屏幕" },
+      { mode: "cover", label: "等比裁切铺满" },
+      { mode: "stretch", label: "拉伸铺满" },
+    ];
+
+    // 播放器音量（手势调节用，0..1）
+    const [volume, setVolume] = useState(1);
+    const volumeRef = useRef(1);
+
+    // 双击快进/快退指示
+    const [seekFlash, setSeekFlash] = useState<{
+      dir: "back" | "fwd";
+      key: number;
+    } | null>(null);
+    const seekFlashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    // 手势过程指示：亮度 / 音量 / 横滑进度
+    const [gestureOverlay, setGestureOverlay] = useState<
+      | null
+      | { kind: "brightness" | "volume"; value: number }
+      | { kind: "seek"; target: number; delta: number }
+    >(null);
+    // 亮度权限被拒时的提示（Android 需要"修改系统设置"权限）
+    const [brightnessHint, setBrightnessHint] = useState(false);
+    const brightDeniedRef = useRef(false);
+
     const videoRef = useRef<VideoRef>(null);
 
     useImperativeHandle(ref, () => ({
@@ -302,8 +334,159 @@ export const NativeVideoPlayer = forwardRef<NativeVideoPlayerRef, Props>(
       resetHideTimer();
       return () => {
         if (hideTimer.current) clearTimeout(hideTimer.current);
+        if (seekFlashTimer.current) clearTimeout(seekFlashTimer.current);
+        if (singleTapTimer.current) clearTimeout(singleTapTimer.current);
       };
     }, []);
+
+    // 按 delta 秒快进/快退（双击手势用）
+    const seekBy = useCallback((delta: number) => {
+      const dur = durationRef.current;
+      if (dur <= 0) return;
+      const t = clamp(currentTimeRef.current + delta, 0, dur);
+      videoRef.current?.seek(t);
+      setCurrentTime(t);
+    }, []);
+
+    // 双击指示：显示 -10秒 / +10秒 徽章后自动消失
+    const flashSeek = useCallback((dir: "back" | "fwd") => {
+      setSeekFlash({ dir, key: Date.now() });
+      if (seekFlashTimer.current) clearTimeout(seekFlashTimer.current);
+      seekFlashTimer.current = setTimeout(() => setSeekFlash(null), 700);
+    }, []);
+
+    // 全屏单击/双击：300ms 内同一半屏点两次 = 双击快进/快退，否则单击切换控制栏
+    const tapRef = useRef<{ time: number; half: "l" | "r" } | null>(null);
+    const singleTapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const handleFsTap = useCallback(
+      (x: number) => {
+        const half = x < SCREEN_W / 2 ? "l" : "r";
+        const now = Date.now();
+        const last = tapRef.current;
+        if (last && now - last.time < 300 && last.half === half) {
+          if (singleTapTimer.current) {
+            clearTimeout(singleTapTimer.current);
+            singleTapTimer.current = null;
+          }
+          tapRef.current = null;
+          if (half === "l") {
+            seekBy(-10);
+            flashSeek("back");
+          } else {
+            seekBy(10);
+            flashSeek("fwd");
+          }
+          showAndReset();
+        } else {
+          tapRef.current = { time: now, half };
+          if (singleTapTimer.current) clearTimeout(singleTapTimer.current);
+          singleTapTimer.current = setTimeout(() => {
+            handleTap();
+            singleTapTimer.current = null;
+            tapRef.current = null;
+          }, 300);
+        }
+      },
+      [SCREEN_W, handleTap, seekBy, flashSeek, showAndReset],
+    );
+
+    // 全屏手势：左半屏上下=亮度，右半屏上下=音量，左右滑=进度
+    const gestRef = useRef<{
+      active: boolean;
+      type: "vl" | "vr" | "h" | null;
+      sx: number;
+      sy: number;
+      startB: number;
+      startV: number;
+      startT: number;
+      hTarget: number;
+    }>({ active: false, type: null, sx: 0, sy: 0, startB: 0.5, startV: 1, startT: 0, hTarget: 0 });
+    const fsPan = useRef(
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponder: () => true,
+        onPanResponderGrant: (e) => {
+          const g = gestRef.current;
+          g.active = false;
+          g.type = null;
+          g.sx = e.nativeEvent.pageX;
+          g.sy = e.nativeEvent.pageY;
+          g.startV = volumeRef.current;
+          g.startT = currentTimeRef.current;
+          g.hTarget = currentTimeRef.current;
+          Brightness.getBrightnessAsync()
+            .then((b) => {
+              g.startB = b;
+            })
+            .catch(() => {
+              g.startB = 0.5;
+            });
+        },
+        onPanResponderMove: (e) => {
+          const g = gestRef.current;
+          const dx = e.nativeEvent.pageX - g.sx;
+          const dy = e.nativeEvent.pageY - g.sy;
+          if (!g.active) {
+            if (Math.abs(dx) < 12 && Math.abs(dy) < 12) return;
+            g.active = true;
+            g.type =
+              Math.abs(dy) > Math.abs(dx)
+                ? g.sx < SCREEN_W / 2
+                  ? "vl"
+                  : "vr"
+                : "h";
+          }
+          if (g.type === "vl") {
+            const b = clamp(g.startB + (-dy / SCREEN_H) * 1.5, 0.01, 1);
+            Brightness.setBrightnessAsync(b)
+              .then(() => setGestureOverlay({ kind: "brightness", value: b }))
+              .catch(() => {
+                // Android 需要"修改系统设置"权限，被拒时只提示一次
+                if (!brightDeniedRef.current) {
+                  brightDeniedRef.current = true;
+                  setBrightnessHint(true);
+                  setTimeout(() => setBrightnessHint(false), 2500);
+                }
+              });
+          } else if (g.type === "vr") {
+            const v = clamp(g.startV + (-dy / SCREEN_H) * 1.5, 0, 1);
+            volumeRef.current = v;
+            setVolume(v);
+            setGestureOverlay({ kind: "volume", value: v });
+          } else if (g.type === "h") {
+            const dur = durationRef.current;
+            if (dur <= 0) return;
+            const target = clamp(g.startT + (dx / SCREEN_W) * dur, 0, dur);
+            g.hTarget = target;
+            setGestureOverlay({
+              kind: "seek",
+              target,
+              delta: target - g.startT,
+            });
+          }
+        },
+        onPanResponderRelease: (e) => {
+          const g = gestRef.current;
+          if (g.active) {
+            if (g.type === "h") {
+              videoRef.current?.seek(g.hTarget);
+              setCurrentTime(g.hTarget);
+            }
+            setGestureOverlay(null);
+            showAndReset();
+            g.active = false;
+            g.type = null;
+          } else {
+            handleFsTap(e.nativeEvent.pageX);
+          }
+        },
+        onPanResponderTerminate: () => {
+          gestRef.current.active = false;
+          gestRef.current.type = null;
+          setGestureOverlay(null);
+        },
+      }),
+    ).current;
 
     const measureTrack = useCallback(() => {
       trackRef.current?.measureInWindow((x, _y, w) => {
@@ -473,10 +656,11 @@ export const NativeVideoPlayer = forwardRef<NativeVideoPlayerRef, Props>(
                 : { uri: resolvedUrl, headers: HEADERS }
             }
             style={StyleSheet.absoluteFill}
-            resizeMode="contain"
+            resizeMode={resizeMode}
             controls={false}
             paused={!!(forcePaused || paused || seekHackPaused)}
             rate={rate}
+            volume={volume}
             progressUpdateInterval={500}
             onProgress={({
               currentTime: ct,
@@ -587,9 +771,14 @@ export const NativeVideoPlayer = forwardRef<NativeVideoPlayerRef, Props>(
           />
         )}
 
-        <TouchableWithoutFeedback onPress={handleTap}>
-          <View style={StyleSheet.absoluteFill} />
-        </TouchableWithoutFeedback>
+        {isFullscreen ? (
+          /* 全屏：手势层（单击/双击/滑动），渲染在控制栏之下 */
+          <View style={StyleSheet.absoluteFill} {...fsPan.panHandlers} />
+        ) : (
+          <TouchableWithoutFeedback onPress={handleTap}>
+            <View style={StyleSheet.absoluteFill} />
+          </TouchableWithoutFeedback>
+        )}
 
         {showControls && (
           <>
@@ -611,7 +800,31 @@ export const NativeVideoPlayer = forwardRef<NativeVideoPlayerRef, Props>(
                   <Ionicons name="chevron-back" size={22} color="#fff" />
                 </TouchableOpacity>
               )}
+              {isFullscreen && (
+                <TouchableOpacity
+                  style={styles.topBtn}
+                  onPress={() => {
+                    onFullscreen();
+                    showAndReset();
+                  }}
+                  hitSlop={6}
+                >
+                  <Ionicons name="chevron-back" size={22} color="#fff" />
+                </TouchableOpacity>
+              )}
               <View style={{ flex: 1 }} />
+              {isFullscreen && (
+                <TouchableOpacity
+                  style={styles.topBtn}
+                  onPress={() => {
+                    setShowResize(true);
+                    showAndReset();
+                  }}
+                  hitSlop={6}
+                >
+                  <Ionicons name="scan" size={20} color="#fff" />
+                </TouchableOpacity>
+              )}
               {onDanmakuListPress && (
                 <TouchableOpacity
                   style={styles.topBtn}
@@ -737,6 +950,128 @@ export const NativeVideoPlayer = forwardRef<NativeVideoPlayerRef, Props>(
         )}
 
         {renderThumbnail()}
+
+        {/* 双击快进/快退指示 */}
+        {isFullscreen && seekFlash && (
+          <View
+            key={seekFlash.key}
+            style={[
+              styles.seekFlash,
+              seekFlash.dir === "back" ? { left: 64 } : { right: 64 },
+            ]}
+            pointerEvents="none"
+          >
+            <Ionicons
+              name={seekFlash.dir === "back" ? "arrow-undo" : "arrow-redo"}
+              size={26}
+              color="#fff"
+            />
+            <Text style={styles.seekFlashText}>
+              {seekFlash.dir === "back" ? "-10秒" : "+10秒"}
+            </Text>
+          </View>
+        )}
+
+        {/* 手势：亮度 / 音量竖条 */}
+        {isFullscreen &&
+          gestureOverlay &&
+          (gestureOverlay.kind === "brightness" ||
+            gestureOverlay.kind === "volume") && (
+            <View
+              style={[
+                styles.gestureBar,
+                gestureOverlay.kind === "brightness"
+                  ? { left: 36 }
+                  : { right: 36 },
+              ]}
+              pointerEvents="none"
+            >
+              <Ionicons
+                name={
+                  gestureOverlay.kind === "brightness"
+                    ? "sunny"
+                    : gestureOverlay.value <= 0.01
+                      ? "volume-mute"
+                      : gestureOverlay.value < 0.5
+                        ? "volume-low"
+                        : "volume-high"
+                }
+                size={20}
+                color="#fff"
+              />
+              <View style={styles.gestureTrack}>
+                <View
+                  style={[
+                    styles.gestureFill,
+                    { height: `${clamp(gestureOverlay.value, 0, 1) * 100}%` as any },
+                  ]}
+                />
+              </View>
+            </View>
+          )}
+
+        {/* 手势：横滑进度 */}
+        {isFullscreen && gestureOverlay?.kind === "seek" && (
+          <View style={styles.seekPill} pointerEvents="none">
+            <Text style={styles.seekPillText}>
+              {gestureOverlay.delta >= 0 ? "快进 " : "快退 "}
+              {formatDuration(Math.floor(gestureOverlay.target))}
+            </Text>
+          </View>
+        )}
+
+        {/* 亮度权限提示 */}
+        {isFullscreen && brightnessHint && (
+          <View style={styles.brightHint} pointerEvents="none">
+            <Text style={styles.brightHintText}>
+              亮度调节需要在系统设置中允许「修改系统设置」
+            </Text>
+          </View>
+        )}
+
+        {/* 选画面填充模式 */}
+        <Modal visible={showResize} transparent animationType="fade">
+          <TouchableOpacity
+            style={styles.modalOverlay}
+            onPress={() => setShowResize(false)}
+          >
+            <View
+              style={[styles.qualityList, { backgroundColor: theme.modalBg }]}
+            >
+              <Text style={[styles.qualityTitle, { color: theme.modalText }]}>
+                画面
+              </Text>
+              {RESIZE_OPTIONS.map((o) => (
+                <TouchableOpacity
+                  key={o.mode}
+                  style={[
+                    styles.qualityItem,
+                    { borderTopColor: theme.modalBorder },
+                  ]}
+                  onPress={() => {
+                    setResizeMode(o.mode);
+                    setShowResize(false);
+                    showAndReset();
+                  }}
+                >
+                  <Text
+                    style={[
+                      styles.qualityItemText,
+                      { color: theme.modalTextSub },
+                      o.mode === resizeMode && styles.qualityItemActive,
+                    ]}
+                  >
+                    {o.label}
+                  </Text>
+                  {o.mode === resizeMode && (
+                    <Ionicons name="checkmark" size={16} color="#00AEEC" />
+                  )}
+                </TouchableOpacity>
+              ))}
+            </View>
+          </TouchableOpacity>
+        </Modal>
+
         {/* 选清晰度 */}
         <Modal visible={showQuality} transparent animationType="fade">
           <TouchableOpacity
@@ -953,4 +1288,68 @@ const styles = StyleSheet.create({
   },
   qualityItemText: { fontSize: 14, color: "#333" },
   qualityItemActive: { color: "#00AEEC", fontWeight: "700" },
+  // 双击快进/快退徽章
+  seekFlash: {
+    position: "absolute",
+    top: "50%",
+    marginTop: -52,
+    width: 104,
+    height: 104,
+    borderRadius: 52,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  seekFlashText: {
+    color: "#fff",
+    fontSize: 15,
+    fontWeight: "700",
+    marginTop: 4,
+  },
+  // 手势亮度/音量竖条
+  gestureBar: {
+    position: "absolute",
+    top: "50%",
+    marginTop: -80,
+    alignItems: "center",
+    backgroundColor: "rgba(0,0,0,0.55)",
+    borderRadius: 20,
+    paddingVertical: 12,
+    paddingHorizontal: 10,
+  },
+  gestureTrack: {
+    width: 5,
+    height: 110,
+    borderRadius: 3,
+    backgroundColor: "rgba(255,255,255,0.25)",
+    marginTop: 8,
+    overflow: "hidden",
+    justifyContent: "flex-end",
+  },
+  gestureFill: {
+    width: "100%",
+    backgroundColor: "#00AEEC",
+  },
+  // 横滑进度胶囊
+  seekPill: {
+    position: "absolute",
+    bottom: 76,
+    alignSelf: "center",
+    backgroundColor: "rgba(0,0,0,0.65)",
+    borderRadius: 18,
+    paddingHorizontal: 18,
+    paddingVertical: 8,
+  },
+  seekPillText: { color: "#fff", fontSize: 14, fontWeight: "600" },
+  // 亮度权限提示
+  brightHint: {
+    position: "absolute",
+    top: 64,
+    alignSelf: "center",
+    backgroundColor: "rgba(0,0,0,0.7)",
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  brightHintText: { color: "#fff", fontSize: 12 },
 });

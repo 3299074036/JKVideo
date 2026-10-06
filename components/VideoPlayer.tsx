@@ -4,6 +4,20 @@ import { Image } from 'expo-image';
 // expo-screen-orientation requires a dev build; gracefully degrade in Expo Go
 let ScreenOrientation: typeof import('expo-screen-orientation') | null = null;
 try { ScreenOrientation = require('expo-screen-orientation'); } catch {}
+let NavigationBar: typeof import('expo-navigation-bar') | null = null;
+try { NavigationBar = require('expo-navigation-bar'); } catch {}
+
+/** 真正沉浸式：隐藏底部系统导航栏，边缘上滑可临时唤出 */
+async function setImmersive(hidden: boolean) {
+  try {
+    if (hidden) {
+      await NavigationBar?.setBehaviorAsync('overlay-swipe');
+      await NavigationBar?.setVisibilityAsync('hidden');
+    } else {
+      await NavigationBar?.setVisibilityAsync('visible');
+    }
+  } catch {}
+}
 import { NativeVideoPlayer, type NativeVideoPlayerRef } from './NativeVideoPlayer';
 import type { PlayUrlResponse, DanmakuItem } from '../services/types';
 import { useTheme } from '../utils/theme';
@@ -45,10 +59,12 @@ export function VideoPlayer({ playData, qualities, currentQn, onQualityChange, b
     if (Platform.OS !== 'web')
       await ScreenOrientation?.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE_RIGHT);
     setFullscreen(true);
+    await setImmersive(true);
   };
 
   const handleExitFullscreen = async () => {
     setFullscreen(false);
+    await setImmersive(false);
     if (Platform.OS !== 'web')
       await ScreenOrientation?.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
   };
@@ -57,6 +73,7 @@ export function VideoPlayer({ playData, qualities, currentQn, onQualityChange, b
     return () => {
       if (Platform.OS !== 'web')
         ScreenOrientation?.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+      setImmersive(false);
     };
   }, []);
 
