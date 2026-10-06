@@ -13,6 +13,7 @@ import {
   FlatList,
   ActivityIndicator,
   RefreshControl,
+  Animated,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -30,7 +31,7 @@ export interface RegionGridHandle {
 }
 
 interface Props {
-  topPadding: number;
+  topPadding: number | Animated.Value;
   onScroll: (e: any) => void;
 }
 
@@ -162,11 +163,11 @@ export const RegionGrid = forwardRef<RegionGridHandle, Props>(
     if (selectedRid == null) {
       const regions = REGION_FEED_CHANNELS;
       return (
-        <FlatList
+        <Animated.FlatList
           data={regions}
           numColumns={3}
           keyExtractor={(r) => String(r.rid)}
-          contentContainerStyle={[styles.grid, { paddingTop: topPadding }]}
+          contentContainerStyle={[styles.grid, { paddingTop: topPadding }] as any}
           onScroll={onScroll}
           scrollEventThrottle={16}
           renderItem={({ item, index }) => (
@@ -198,7 +199,7 @@ export const RegionGrid = forwardRef<RegionGridHandle, Props>(
     const regionName = REGION_FEED_CHANNELS.find((r) => r.rid === selectedRid)?.name ?? "";
     return (
       <View style={[styles.wrap, { backgroundColor: theme.bg }]}>
-        <View style={[styles.subHeader, { paddingTop: topPadding, backgroundColor: theme.bg }]}>
+        <Animated.View style={[styles.subHeader, { paddingTop: topPadding, backgroundColor: theme.bg } as any]}>
           <TouchableOpacity
             style={styles.backBtn}
             onPress={() => setSelectedRid(null)}
@@ -208,7 +209,7 @@ export const RegionGrid = forwardRef<RegionGridHandle, Props>(
           </TouchableOpacity>
           <Text style={[styles.subTitle, { color: theme.text }]}>{regionName}</Text>
           <View style={styles.backBtn} />
-        </View>
+        </Animated.View>
         {loading && items.length === 0 ? (
           <View style={styles.center}>
             <ActivityIndicator color="#00AEEC" />

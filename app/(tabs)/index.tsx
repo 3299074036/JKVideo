@@ -342,6 +342,11 @@ export default function HomeScreen() {
 
   const currentHeaderTranslate = tabHeaders[activeTab].translate;
   const currentHeaderOpacity = tabHeaders[activeTab].opacity;
+  // 分区返回栏顶部间距跟随导航栏折叠：导航栏收起时返回栏上移贴住 tab，避免顶部留白
+  const regionTopPadding = useMemo(
+    () => Animated.add(insets.top + NAV_H + 6, tabHeaders.region.translate),
+    [insets.top, tabHeaders.region.translate],
+  );
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: theme.bg }]} edges={["left", "right"]}>
@@ -517,7 +522,7 @@ export default function HomeScreen() {
           {visitedTabs.includes("region") && (
             <RegionGrid
               ref={regionRef}
-              topPadding={insets.top + NAV_H + 6}
+              topPadding={regionTopPadding}
               onScroll={tabHeaders.region.onScroll}
             />
           )}
