@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, StyleSheet, Text, Platform, Modal, StatusBar, useWindowDimensions } from 'react-native';
+import { View, StyleSheet, Text, Platform, StatusBar, BackHandler, useWindowDimensions } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 // expo-screen-orientation requires a dev build; gracefully degrade in Expo Go
 let ScreenOrientation: typeof import('expo-screen-orientation') | null = null;
@@ -60,6 +61,7 @@ interface Props {
 export function VideoPlayer({ playData, qualities, currentQn, onQualityChange, bvid, cid, danmakus, onTimeUpdate, initialTime, onDanmakuListPress, onBack, coverUrl, onPrevPage, onNextPage, hasPrevPage, hasNextPage, pages, pageIndex, onPageChange, switchingPageIdx, upName, upFace, onlineCount, onUpPress }: Props) {
   const [fullscreen, setFullscreen] = useState(false);
   const { width, height } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const VIDEO_HEIGHT = width * 0.5625;
   const needsRotation = !ScreenOrientation && fullscreen;
   const lastTimeRef = useRef(0);
@@ -124,6 +126,16 @@ export function VideoPlayer({ playData, qualities, currentQn, onQualityChange, b
       } catch {}
       StatusBar.popStackEntry(entry);
     };
+  }, [fullscreen]);
+
+  // 全屏时拦截系统返回键：先退全屏，而不是直接退出页面
+  useEffect(() => {
+    if (!fullscreen) return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      handleExitFullscreen();
+      return true;
+    });
+    return () => sub.remove();
   }, [fullscreen]);
 
   // 点击全屏顶栏 UP 主信息：先退全屏（恢复状态栏/方向），再跳转 UP 主页
@@ -191,13 +203,26 @@ export function VideoPlayer({ playData, qualities, currentQn, onQualityChange, b
       )}
 
       {fullscreen && (
-        <Modal visible animationType="none" statusBarTranslucent>
+        // 全屏层直接画在 Activity 同一窗口（不用 RN Modal）：
+        // Modal 在 Android 上是独立 Dialog 窗口，有自己的状态栏控制器，
+        // StatusBar.setHidden 只作用于 Activity 窗口，会被 Dialog 盖掉失效。
+        // 负 inset 撑满 SafeAreaView 的 padding，做到真全屏。
+        <View
+          style={[
+            styles.fsOverlay,
+            {
+              top: -insets.top,
+              left: -insets.left,
+              right: -insets.right,
+              bottom: -insets.bottom,
+            },
+          ]}
+        >
           <StatusBar hidden />
-          <View style={{ flex: 1, backgroundColor: '#000', justifyContent: 'center', alignItems: 'center' }}>
-            <View style={needsRotation
-              ? { width: height, height: width, transform: [{ rotate: '90deg' }] }
-              : { flex: 1, width: '100%' }
-            }>
+          <View style={needsRotation
+            ? { width: height, height: width, transform: [{ rotate: '90deg' }] }
+            : { flex: 1, width: '100%' }
+          }>
               <NativeVideoPlayer
                 playData={playData}
                 qualities={qualities}
@@ -227,8 +252,7 @@ export function VideoPlayer({ playData, qualities, currentQn, onQualityChange, b
               />
             </View>
           </View>
-        </Modal>
-      )}
+        )}
     </>
   );
 }
@@ -236,4 +260,13 @@ export function VideoPlayer({ playData, qualities, currentQn, onQualityChange, b
 const styles = StyleSheet.create({
   placeholder: { justifyContent: 'center', alignItems: 'center' },
   placeholderText: { fontSize: 14 },
+  // 全屏覆盖层：同一 Activity 窗口内的绝对定位层，盖住页面一切内容
+  fsOverlay: {
+    position: 'absolute',
+    zIndex: 999,
+    elevation: 999,
+    backgroundColor: '#000',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
 });
