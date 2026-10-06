@@ -38,9 +38,18 @@ interface Props {
   onBack?: () => void;
   /** 视频封面 URL。playData 未到达 / <Video> 首帧未到达时用作 poster，避免黑闪 */
   coverUrl?: string;
+  /** 上一集 / 下一集（分 P 切换），仅全屏 */
+  onPrevPage?: () => void;
+  onNextPage?: () => void;
+  hasPrevPage?: boolean;
+  hasNextPage?: boolean;
+  /** 全屏顶栏 UP 主信息 */
+  upName?: string;
+  upFace?: string;
+  onlineCount?: number;
 }
 
-export function VideoPlayer({ playData, qualities, currentQn, onQualityChange, bvid, cid, danmakus, onTimeUpdate, initialTime, onDanmakuListPress, onBack, coverUrl }: Props) {
+export function VideoPlayer({ playData, qualities, currentQn, onQualityChange, bvid, cid, danmakus, onTimeUpdate, initialTime, onDanmakuListPress, onBack, coverUrl, onPrevPage, onNextPage, hasPrevPage, hasNextPage, upName, upFace, onlineCount }: Props) {
   const [fullscreen, setFullscreen] = useState(false);
   const { width, height } = useWindowDimensions();
   const VIDEO_HEIGHT = width * 0.5625;
@@ -53,6 +62,15 @@ export function VideoPlayer({ playData, qualities, currentQn, onQualityChange, b
     lastTimeRef.current = initialTime;
     seededRef.current = true;
   }
+  // 切分 P（两个真实 cid 之间切换）时续播位置清零，新分 P 从头播；
+  // 首次加载 cid 从空变有值时不重置，避免吞掉续播位置
+  const cidRef = useRef(cid);
+  useEffect(() => {
+    if (cid && cidRef.current && cidRef.current !== cid) {
+      lastTimeRef.current = 0;
+    }
+    cidRef.current = cid;
+  }, [cid]);
   const portraitRef = useRef<NativeVideoPlayerRef>(null);
 
   const handleEnterFullscreen = async () => {
@@ -151,6 +169,13 @@ export function VideoPlayer({ playData, qualities, currentQn, onQualityChange, b
                 initialTime={lastTimeRef.current}
                 onTimeUpdate={(t) => { lastTimeRef.current = t; onTimeUpdate?.(t); }}
                 coverUrl={coverUrl}
+                onPrevPage={onPrevPage}
+                onNextPage={onNextPage}
+                hasPrevPage={hasPrevPage}
+                hasNextPage={hasNextPage}
+                upName={upName}
+                upFace={upFace}
+                onlineCount={onlineCount}
                 style={needsRotation ? { width: height, height: width } : { flex: 1 }}
               />
             </View>

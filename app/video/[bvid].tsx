@@ -14,7 +14,7 @@ import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { VideoPlayer } from "../../components/VideoPlayer";
-import { getDanmaku, getUploaderStat } from "../../services/bilibili";
+import { getDanmaku, getOnlineCount, getUploaderStat } from "../../services/bilibili";
 import type { DanmakuItem, VideoItem } from "../../services/types";
 import { useVideoDetail } from "../../hooks/useVideoDetail";
 import { useRelatedVideos } from "../../hooks/useRelatedVideos";
@@ -57,6 +57,10 @@ export default function VideoDetailScreen() {
     currentQn,
     changeQuality,
     initialTime,
+    pages,
+    pageIndex,
+    changePage,
+    currentCid,
   } = useVideoDetail(bvid as string);
 
   const [danmakus, setDanmakus] = useState<DanmakuItem[]>([]);
@@ -114,13 +118,28 @@ export default function VideoDetailScreen() {
     return () => handle.cancel();
   }, [bvid, loadRelated]);
 
+  // 弹幕按当前分 P 的 cid 拉取，切分 P 时先清空老弹幕
   useEffect(() => {
-    if (!video?.cid) return;
+    setDanmakus([]);
+    if (!currentCid) return;
     const handle = InteractionManager.runAfterInteractions(() => {
-      getDanmaku(video.cid!).then(setDanmakus).catch(() => {});
+      getDanmaku(currentCid).then(setDanmakus).catch(() => {});
     });
     return () => handle.cancel();
-  }, [video?.cid]);
+  }, [currentCid]);
+
+  // 当前分 P 在线观看人数（全屏顶栏 UP 信息区展示）
+  const [onlineCount, setOnlineCount] = useState(0);
+  useEffect(() => {
+    setOnlineCount(0);
+    if (!bvid || !currentCid) return;
+    const handle = InteractionManager.runAfterInteractions(() => {
+      getOnlineCount(bvid as string, currentCid)
+        .then(setOnlineCount)
+        .catch(() => {});
+    });
+    return () => handle.cancel();
+  }, [bvid, currentCid]);
 
   useEffect(() => {
     if (!video?.owner?.mid) return;
@@ -140,12 +159,19 @@ export default function VideoDetailScreen() {
         currentQn={currentQn}
         onQualityChange={changeQuality}
         bvid={bvid as string}
-        cid={video?.cid}
+        cid={currentCid}
         danmakus={danmakus}
         onTimeUpdate={setCurrentTime}
         initialTime={initialTime}
         onBack={() => router.back()}
         coverUrl={video?.pic ? proxyImageUrl(video.pic) : undefined}
+        onPrevPage={() => changePage(pageIndex - 1)}
+        onNextPage={() => changePage(pageIndex + 1)}
+        hasPrevPage={pages.length > 1 && pageIndex > 0}
+        hasNextPage={pages.length > 1 && pageIndex < pages.length - 1}
+        upName={video?.owner?.name}
+        upFace={video?.owner?.face ? proxyImageUrl(video.owner.face) : undefined}
+        onlineCount={onlineCount}
       />
 
       {videoLoading || !video || !minSkeletonElapsed ? (
@@ -335,7 +361,7 @@ export default function VideoDetailScreen() {
         onClose={() => setShowDownload(false)}
         topOffset={sheetTopOffset}
         bvid={bvid as string}
-        cid={video?.cid ?? 0}
+        cid={currentCid ?? 0}
         title={video?.title ?? ""}
         cover={video?.pic ?? ""}
         qualities={qualities}
