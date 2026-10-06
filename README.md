@@ -1,12 +1,10 @@
 <div align="center">
 
-<img src="https://img.shields.io/badge/JKVideo-仿B站客户端-00AEEC?style=for-the-badge&logo=bilibili&logoColor=white" alt="JKVideo"/>
+# JKVideo（二开自用版）
 
-# JKVideo
+**基于原 JKVideo 项目的个人二次开发版本，仅自用**
 
-**高颜值第三方 B 站 React Native 客户端**
-
-*A feature-rich Bilibili-like app with DASH playback, real-time danmaku, WBI signing & live streaming*
+*当前版本：0.0.5（versionCode 5）*
 
 ---
 
@@ -14,72 +12,35 @@
 [![Expo](https://img.shields.io/badge/Expo-SDK_55-000020?logo=expo)](https://expo.dev)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?logo=typescript)](https://www.typescriptlang.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Platform](https://img.shields.io/badge/Platform-Android%20%7C%20iOS%20%7C%20Web-lightgrey)](README.md)
-
-[English](README.en.md) · [快速开始](#快速开始) · [功能亮点](#功能亮点) · [贡献](CONTRIBUTING.md)
+[![Platform](https://img.shields.io/badge/Platform-Android-lightgrey)]()
 
 </div>
 
 ---
 
-> ## ⚠️ 重要公告
->
-> 本项目已收到**哔哩哔哩（bilibili）律师函**，要求停止对 B 站 API 的调用及相关仿制行为。
->
-> 为尊重知识产权及相关法律法规，本仓库**即日起停止后续维护与更新**，不再接受新的 Issue 和 Pull Request。
->
-> 现有代码仅作学习参考保留，请勿将本项目用于任何商业或违法用途。
->
-> 感谢所有支持过本项目的朋友。
+## 说明
+
+本仓库是 [JKVideo](https://github.com/tiajinsha/JKVideo) 原项目的个人二开版本。
+
+原项目已收到哔哩哔哩律师函并停止维护。本仓库为**私有仓库**，仅供个人学习研究使用，**不公开发布、不用于商业用途**。
+
+二开内容（相对原版）：
+
+- 导航重构：首页（直播 / 热门 / 排行榜 / 分区）、动态、我的
+- 「我的」页：头像 / 昵称 / UID、扫码登录、观看历史、我的收藏、我的关注、下载管理、设置
+- 关注支持选择分组；排行榜、动态页
+- 全屏播放器：画面模式（适应 / 铺满 / 拉伸）、双击快进快退、左半屏调亮度 / 右半屏调音量 / 横滑调进度、锁定、分 P 切换、UP 信息 + 在线人数
+- 代码审查缺陷修复（播放器、数据竞态、安全加固等 80 项）
+- 安全收敛：无硬编码密钥、自更新走自有仓库、局域网分享单文件隔离
 
 ---
 
-## 截图预览
+## 安装（Android）
 
-<table>
-  <tr>
-    <td align="center"><img src="public/p1.jpg" width="180"/><br/><sub>首页热门 · 内联视频 · 穿插直播</sub></td>
-    <td align="center"><img src="public/p2.jpg" width="180"/><br/><sub>首页直播 · 关注房间· 分区筛选</sub></td>
-    <td align="center"><img src="public/p3.jpg" width="180"/><br/><sub>直播详情 · 4K HDR · 多清晰度</sub></td>
-  </tr>
-  <tr>
-    <td align="center"><img src="public/p4.jpg" width="180"/><br/><sub>下载管理 · 局域网分享二维码</sub></td>
-    <td align="center"><img src="public/p5.jpg" width="180"/><br/><sub>直播详情 ·实时弹幕 · 清晰度切换</sub></td>
-    <td align="center"><img src="public/p6.jpg" width="180"/><br/><sub>视频弹幕 · 同步加载</sub></td>
-  </tr>
-</table>
+前往 [Releases](../../releases/latest) 下载最新 APK（arm64），安装即用。
 
-## 演示视频
-
-https://github.com/tiajinsha/JKVideo/releases/download/v1.0.0/6490dcd9dba9a243a7cd8f00359cc285.mp4
-
----
-
-## 功能亮点
-
-🎬 **DASH 完整播放**
-Bilibili DASH 流 → `buildDashMpdUri()` 生成本地 MPD → ExoPlayer 原生解码，支持 1080P + 4K HDR杜比视界
-
-💬 **完整弹幕系统**
-视频弹幕 XML 时间轴同步 + 5 车道飘屏覆盖；直播弹幕 WebSocket 实时接收 + 舰长标记 + 礼物计数
-
-🔐 **WBI 签名实现**
-纯 TypeScript 手写 MD5，无任何外部加密依赖，nav 接口 12h 自动缓存
-
-🏠 **智能首页排布**
-BigVideoCard 内联 DASH 静音自动播放 + 水平手势快进 + 直播卡片穿插 + 双列混排
-
-📺 **全局迷你播放器**
-切换页面后底部浮层续播，VideoStore 跨组件状态同步
-
-🔑 **扫码登录**
-二维码生成 + 2s 轮询 + 响应头 Cookie 自动提取 SESSDATA
-
-📥 **下载 + 局域网分享**
-多清晰度后台下载，内置 HTTP 服务器生成局域网 QR 码，同 Wi-Fi 设备扫码直接播放
-
-🌐 **跨平台运行**
-Android · iOS · Web，Expo Go 扫码 5 分钟运行，Dev Build 解锁完整 DASH 播放
+> 需在 Android 设置中开启「安装未知来源应用」。
+> 版本号高于手机上已安装的版本时可直接覆盖安装。
 
 ---
 
@@ -88,76 +49,11 @@ Android · iOS · Web，Expo Go 扫码 5 分钟运行，Dev Build 解锁完整 D
 | 层 | 技术 |
 |---|---|
 | 框架 | React Native 0.83 + Expo SDK 55 |
-| 路由 | expo-router v4（文件系统路由，Stack 导航） |
+| 路由 | expo-router v4（文件系统路由） |
 | 状态管理 | Zustand |
 | 网络请求 | Axios |
-| 本地存储 | @react-native-async-storage/async-storage |
 | 视频播放 | react-native-video（DASH MPD / HLS / MP4） |
-| 降级播放 | react-native-webview（HTML5 video 注入） |
-| 页面滑动 | react-native-pager-view |
-| 图标 | @expo/vector-icons（Ionicons） |
-
----
-
-## 快速开始
-
-### 方式一：Expo Go（5 分钟，无需编译）
-
-> 部分清晰度受限，视频播放降级为 WebView 方案
-
-```bash
-git clone https://github.com/tiajinsha/JKVideo.git
-cd JKVideo
-npm install
-npx expo start
-```
-
-用 Expo Go App（[Android](https://expo.dev/go) / [iOS](https://expo.dev/go)）扫描终端二维码即可运行。
-
-### 方式二：Dev Build（完整功能，推荐）
-
-> 支持 DASH 1080P+ 原生播放、完整弹幕系统
-
-```bash
-npm install
-npx expo run:android   # Android
-npx expo run:ios       # iOS（需 macOS + Xcode）
-```
-
-### 方式三：Web 端
-
-```bash
-npm install
-npx expo start --web
-```
-
-> Web 端图片需本地代理服务器绕过防盗链：`node scripts/proxy.js`（端口 3001）
-
-### 直接安装（Android）
-
-前往 [Releases](https://github.com/tiajinsha/JKVideo/releases/latest) 下载最新 APK，无需编译，安装即用。
-
-> 需在 Android 设置中开启「安装未知来源应用」
-
----
-
-## 项目结构
-
-```
-app/
-  index.tsx            # 首页（PagerView 热门/直播 Tab）
-  video/[bvid].tsx     # 视频详情（播放 + 简介/评论/弹幕）
-  live/[roomId].tsx    # 直播详情（HLS 播放 + 实时弹幕）
-  search.tsx           # 搜索页
-  downloads.tsx        # 下载管理页
-  settings.tsx         # 设置页（画质 + 退出登录）
-
-components/            # UI 组件（播放器、弹幕、卡片等）
-hooks/                 # 数据 Hooks（视频列表、播放流、弹幕等）
-services/              # Bilibili API 封装（axios + Cookie 拦截）
-store/                 # Zustand 状态（登录、下载、播放、设置）
-utils/                 # 工具函数（格式化、图片代理、MPD 构建）
-```
+| 构建 | release 正式包（JS 打进 APK，独立运行） |
 
 ---
 
@@ -165,23 +61,15 @@ utils/                 # 工具函数（格式化、图片代理、MPD 构建）
 
 | 限制 | 原因 |
 |---|---|
-| 4K / 1080P+ 需要大会员账号登录 | B 站 API 策略限制 |
-| FLV 直播流不支持 | HTML5 / ExoPlayer 均不支持 FLV，已自动选 HLS |
-| Web 端需本地代理 | B 站图片防盗链（Referer 限制） |
-| 动态流 / 投稿 / 点赞 | 需要 `bili_jct` CSRF Token，暂未实现 |
-| 二维码 10 分钟过期 | 关闭登录弹窗重新打开即可刷新 |
-
----
-
-## 贡献
-
-欢迎提交 Issue 和 PR！请先阅读 [CONTRIBUTING.md](CONTRIBUTING.md)。
+| 4K / 高清晰度需大会员账号登录 | B 站 API 策略限制 |
+| 部分写操作需登录态 | 需要 SESSDATA / bili_jct |
+| 仅 Android arm64 | 自用打包配置 |
 
 ---
 
 ## 免责声明
 
-本项目仅供个人学习研究使用，不得用于商业用途。
+本项目仅供个人学习研究使用，不得用于商业用途，不得公开发布。
 所有视频内容版权归原作者及哔哩哔哩所有。
 本项目与哔哩哔哩官方无任何关联。
 
@@ -189,31 +77,4 @@ utils/                 # 工具函数（格式化、图片代理、MPD 构建）
 
 ## License
 
-[MIT](LICENSE) © 2026 JKVideo Contributors
-
----
-
-<div align="center">
-
-如果这个项目对你有帮助，欢迎点一个 ⭐ Star！
-
----
-
-## 请作者喝杯咖啡 ☕
-
-如果这个项目对你有所帮助，欢迎请作者喝杯咖啡，你的支持是持续开发的最大动力，感谢每一位愿意打赏的朋友！
-
-<table>
-  <tr>
-    <td align="center">
-      <img src="public/wxpay.jpg" width="180"/><br/>
-      <sub>微信支付</sub>
-    </td>
-    <td align="center">
-      <img src="public/alipay.jpg" width="180"/><br/>
-      <sub>支付宝</sub>
-    </td>
-  </tr>
-</table>
-
-</div>
+[MIT](LICENSE)
