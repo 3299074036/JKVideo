@@ -391,7 +391,7 @@ const styles = StyleSheet.create({
     marginHorizontal: 4,
     marginBottom: 6,
     backgroundColor: "#fff",
-    borderRadius: 6,
+    borderRadius: 10,
     overflow: "hidden",
   },
   durationBadge: {
