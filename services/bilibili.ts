@@ -1005,7 +1005,7 @@ export async function getRegionFeed(feedRid: number, displayId = 1): Promise<Vid
     .map(item => ({
       ...item,
       pic: item.pic ?? item.cover,
-      owner: item.owner ?? { mid: 0, name: item.author ?? '', face: '' },
+      owner: item.owner ?? { mid: item.author?.mid ?? 0, name: item.author?.name ?? '', face: item.author?.face ?? '' },
     } as VideoItem));
 }
 
