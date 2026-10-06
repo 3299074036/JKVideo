@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, Image, StyleSheet, Animated } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useSegments } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useVideoStore } from '../store/videoStore';
@@ -14,6 +14,9 @@ export function MiniPlayer() {
   const { isActive, bvid, title, cover, clearVideo } = useVideoStore();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const segments = useSegments();
+  // 在 tab 页时把悬浮窗抬到底栏（约 60 高）上方，避免盖住 tab
+  const onTab = segments[0] === '(tabs)';
 
   const { pan, panHandlers } = useMiniDrag({
     width: MINI_W,
@@ -25,7 +28,7 @@ export function MiniPlayer() {
 
   if (!isActive) return null;
 
-  const bottomOffset = insets.bottom + 16;
+  const bottomOffset = insets.bottom + (onTab ? 76 : 16);
 
   return (
     <Animated.View

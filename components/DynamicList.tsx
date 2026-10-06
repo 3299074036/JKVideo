@@ -157,9 +157,9 @@ export const DynamicList = forwardRef<DynamicListHandle, Props>(
     );
 
     return (
-      <View style={[styles.wrap, { paddingTop: topPadding, backgroundColor: theme.bg }]}>
+      <View style={[styles.wrap, { backgroundColor: theme.bg }]}>
         {!isLoggedIn ? (
-          <View style={styles.center}>
+          <View style={[styles.center, { paddingTop: topPadding }]}>
             <Ionicons name="people-outline" size={48} color={theme.textSub} />
             <Text style={[styles.tip, { color: theme.textSub }]}>
               登录后查看关注的人的动态
@@ -173,11 +173,11 @@ export const DynamicList = forwardRef<DynamicListHandle, Props>(
             </TouchableOpacity>
           </View>
         ) : loading && items.length === 0 ? (
-          <View style={styles.center}>
+          <View style={[styles.center, { paddingTop: topPadding }]}>
             <ActivityIndicator color="#00AEEC" />
           </View>
         ) : error && items.length === 0 ? (
-          <View style={styles.center}>
+          <View style={[styles.center, { paddingTop: topPadding }]}>
             <Text style={{ color: theme.textSub }}>{error}</Text>
             <TouchableOpacity
               style={styles.loginBtn}
@@ -192,6 +192,7 @@ export const DynamicList = forwardRef<DynamicListHandle, Props>(
             ref={listRef}
             data={items}
             keyExtractor={(item) => item.id}
+            contentContainerStyle={{ paddingTop: topPadding, paddingBottom: 16 }}
             renderItem={renderItem}
             onScroll={onScroll}
             scrollEventThrottle={16}
@@ -204,7 +205,7 @@ export const DynamicList = forwardRef<DynamicListHandle, Props>(
             }
             ListEmptyComponent={
               !loading ? (
-                <View style={styles.center}>
+                <View style={styles.emptyBox}>
                   <Text style={{ color: theme.textSub }}>暂无动态</Text>
                 </View>
               ) : null
@@ -227,6 +228,7 @@ export const DynamicList = forwardRef<DynamicListHandle, Props>(
 const styles = StyleSheet.create({
   wrap: { flex: 1 },
   center: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12 },
+  emptyBox: { alignItems: "center", paddingVertical: 48 },
   tip: { fontSize: 14 },
   loginBtn: {
     backgroundColor: "#00AEEC",

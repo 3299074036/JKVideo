@@ -11,10 +11,10 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useRouter } from 'expo-router';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
-import { useAuthStore } from '../store/authStore';
-import { LoginModal } from '../components/LoginModal';
-import { useTheme } from '../utils/theme';
-import { proxyImageUrl } from '../utils/imageUrl';
+import { useAuthStore } from '../../store/authStore';
+import { LoginModal } from '../../components/LoginModal';
+import { useTheme } from '../../utils/theme';
+import { proxyImageUrl } from '../../utils/imageUrl';
 
 interface MenuEntry {
   key: string;
@@ -60,12 +60,8 @@ export default function MineScreen() {
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: theme.bg }]} edges={['left', 'right']}>
-      <View style={[styles.topBar, { paddingTop: insets.top, backgroundColor: theme.card, borderBottomColor: theme.border }]}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} activeOpacity={0.7}>
-          <Ionicons name="chevron-back" size={24} color={theme.text} />
-        </TouchableOpacity>
+      <View style={[styles.topBar, { height: 44 + insets.top, paddingTop: insets.top, backgroundColor: theme.card, borderBottomColor: theme.border }]}>
         <Text style={[styles.topTitle, { color: theme.text }]}>我的</Text>
-        <View style={styles.backBtn} />
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
@@ -140,11 +136,8 @@ export default function MineScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1 },
   topBar: {
-    height: 44,
-    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 8,
+    justifyContent: 'center',
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   backBtn: { width: 40, alignItems: 'center' },

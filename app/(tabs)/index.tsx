@@ -25,25 +25,25 @@ import {
 } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { VideoCard } from "../components/VideoCard";
-import { LiveCard } from "../components/LiveCard";
-import { LoginModal } from "../components/LoginModal";
-import { DownloadProgressBtn } from "../components/DownloadProgressBtn";
-import { useVideoList } from "../hooks/useVideoList";
-import { useLiveList } from "../hooks/useLiveList";
-import { useAuthStore } from "../store/authStore";
+import { VideoCard } from "../../components/VideoCard";
+import { LiveCard } from "../../components/LiveCard";
+import { LoginModal } from "../../components/LoginModal";
+import { DownloadProgressBtn } from "../../components/DownloadProgressBtn";
+import { useVideoList } from "../../hooks/useVideoList";
+import { useLiveList } from "../../hooks/useLiveList";
+import { useAuthStore } from "../../store/authStore";
 import {
   toListRows,
   type ListRow,
   type BigRow,
-} from "../utils/videoRows";
-import { BigVideoCard } from "../components/BigVideoCard";
-import { FollowedLiveStrip } from "../components/FollowedLiveStrip";
-import { RankingList, type RankingListHandle } from "../components/RankingList";
-import { DynamicList, type DynamicListHandle } from "../components/DynamicList";
-import { useTheme } from "../utils/theme";
-import { useVisibleBigKeyStore } from "../store/visibleBigKeyStore";
-import type { LiveRoom } from "../services/types";
+} from "../../utils/videoRows";
+import { BigVideoCard } from "../../components/BigVideoCard";
+import { FollowedLiveStrip } from "../../components/FollowedLiveStrip";
+import { RankingList, type RankingListHandle } from "../../components/RankingList";
+import { DynamicList, type DynamicListHandle } from "../../components/DynamicList";
+import { useTheme } from "../../utils/theme";
+import { useVisibleBigKeyStore } from "../../store/visibleBigKeyStore";
+import type { LiveRoom } from "../../services/types";
 
 const HEADER_H = 44;
 const TAB_H = 38;
@@ -488,7 +488,7 @@ export default function HomeScreen() {
           <View style={styles.headerRight}>
             <TouchableOpacity
               style={styles.headerBtn}
-              onPress={() => (isLoggedIn ? router.push('/mine' as any) : setShowLogin(true))}
+              onPress={() => (isLoggedIn ? router.navigate('/(tabs)/mine' as any) : setShowLogin(true))}
             >
               {isLoggedIn && face ? (
                 <Image source={{ uri: face }} style={styles.userAvatar} />

@@ -49,7 +49,7 @@ function RootLayout() {
       <View style={{ flex: 1 }}>
         <ErrorBoundary fallback={<Text style={{ padding: 32, textAlign: 'center' }}>发生错误，请重启 App</Text>}>
           <Stack screenOptions={{ headerShown: false }}>
-            <Stack.Screen name="index" />
+            <Stack.Screen name="(tabs)" />
             <Stack.Screen
               name="video"
               options={{
@@ -83,14 +83,6 @@ function RootLayout() {
             />
             <Stack.Screen
               name="settings"
-              options={{
-                animation: "slide_from_right",
-                gestureEnabled: true,
-                gestureDirection: "horizontal",
-              }}
-            />
-            <Stack.Screen
-              name="mine"
               options={{
                 animation: "slide_from_right",
                 gestureEnabled: true,

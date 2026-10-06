@@ -126,41 +126,48 @@ export const RankingList = forwardRef<RankingListHandle, Props>(
       [router, theme, trafficSaving],
     );
 
-    return (
-      <View style={[styles.wrap, { paddingTop: topPadding, backgroundColor: theme.bg }]}>
-        <View style={[styles.tabBar, { borderBottomColor: theme.border }]}>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.tabContent}
-          >
-            {RANK_REGIONS.map((r) => (
-              <TouchableOpacity
-                key={r.rid}
-                style={[styles.tab, rid === r.rid && styles.tabActive]}
-                activeOpacity={0.7}
-                onPress={() => switchRegion(r.rid)}
+    const regionChips = (
+      <View
+        style={[
+          styles.tabBar,
+          { borderBottomColor: theme.border, backgroundColor: theme.bg },
+        ]}
+      >
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.tabContent}
+        >
+          {RANK_REGIONS.map((r) => (
+            <TouchableOpacity
+              key={r.rid}
+              style={[styles.tab, rid === r.rid && styles.tabActive]}
+              activeOpacity={0.7}
+              onPress={() => switchRegion(r.rid)}
+            >
+              <Text
+                style={[
+                  styles.tabText,
+                  { color: theme.textSub },
+                  rid === r.rid && styles.tabTextActive,
+                ]}
               >
-                <Text
-                  style={[
-                    styles.tabText,
-                    { color: theme.textSub },
-                    rid === r.rid && styles.tabTextActive,
-                  ]}
-                >
-                  {r.name}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        </View>
+                {r.name}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      </View>
+    );
 
+    return (
+      <View style={[styles.wrap, { backgroundColor: theme.bg }]}>
         {loading && items.length === 0 ? (
-          <View style={styles.center}>
+          <View style={[styles.center, { paddingTop: topPadding }]}>
             <ActivityIndicator color="#00AEEC" />
           </View>
         ) : error && items.length === 0 ? (
-          <View style={styles.center}>
+          <View style={[styles.center, { paddingTop: topPadding }]}>
             <Text style={{ color: theme.textSub }}>{error}</Text>
             <TouchableOpacity
               style={styles.retryBtn}
@@ -176,7 +183,8 @@ export const RankingList = forwardRef<RankingListHandle, Props>(
             data={items}
             keyExtractor={(item) => item.bvid}
             renderItem={renderItem}
-            contentContainerStyle={styles.list}
+            contentContainerStyle={[styles.list, { paddingTop: topPadding }]}
+            ListHeaderComponent={regionChips}
             onScroll={onScroll}
             scrollEventThrottle={16}
             refreshControl={
