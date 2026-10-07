@@ -36,22 +36,21 @@ interface Props {
   topPadding: number;
   onScroll: (e: any) => void;
   onLoginPress: () => void;
-  /** 是否显示 全部/视频/图文 筛选（动态底栏用） */
-  showFilter?: boolean;
+  /** 该列表实例的数据筛选（动态页三页各固定一个） */
+  filter: DynFilter;
 }
 
-type DynFilter = "all" | "video" | "text";
+export type DynFilter = "all" | "video" | "text";
 
 /** 动态流列表（关注的人的动态），给首页 tab / 动态底栏复用 */
 export const DynamicList = forwardRef<DynamicListHandle, Props>(
-  function DynamicList({ topPadding, onScroll, onLoginPress, showFilter }, ref) {
+  function DynamicList({ topPadding, onScroll, onLoginPress, filter }, ref) {
     const router = useRouter();
     const theme = useTheme();
     const isLoggedIn = useAuthStore((s) => s.isLoggedIn);
     const trafficSaving = useSettingsStore((s) => s.trafficSaving);
 
     const [items, setItems] = useState<DynamicItem[]>([]);
-    const [dynFilter, setDynFilter] = useState<DynFilter>("all");
     const [offset, setOffset] = useState("");
     const [hasMore, setHasMore] = useState(true);
     const [loading, setLoading] = useState(false);
@@ -79,9 +78,9 @@ export const DynamicList = forwardRef<DynamicListHandle, Props>(
         else setLoading(true);
         setError("");
         try {
-          const r = await getDynamicFeed(reset ? "" : curOffset, dynFilter === "video" ? "video" : "all");
+          const r = await getDynamicFeed(reset ? "" : curOffset, filter === "video" ? "video" : "all");
           if (reqTokenRef.current !== token) return; // 已被更新的请求抢占，丢弃
-          const filtered = dynFilter === "text" ? r.items.filter((it) => it.type !== "av") : r.items;
+          const filtered = filter === "text" ? r.items.filter((it) => it.type !== "av") : r.items;
           setItems((prev) => (reset ? filtered : [...prev, ...filtered]));
           setOffset(r.offset);
           setHasMore(r.hasMore);
@@ -97,7 +96,7 @@ export const DynamicList = forwardRef<DynamicListHandle, Props>(
           }
         }
       },
-      [isLoggedIn, offset, hasMore, dynFilter],
+      [isLoggedIn, offset, hasMore, filter],
     );
 
     useEffect(() => {
@@ -105,20 +104,11 @@ export const DynamicList = forwardRef<DynamicListHandle, Props>(
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isLoggedIn]);
 
-    const switchFilter = (f: DynFilter) => {
-      if (f === dynFilter) return;
-      setDynFilter(f);
-      setItems([]);
-      setOffset("");
-      setHasMore(true);
-      listRef.current?.scrollToOffset({ offset: 0, animated: false });
-    };
-
     // 筛选变化后重新加载（等 state 落定）
     useEffect(() => {
       if (isLoggedIn) load(true, "", true);
       // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [dynFilter]);
+    }, [filter]);
 
     useImperativeHandle(
       ref,
@@ -229,39 +219,6 @@ export const DynamicList = forwardRef<DynamicListHandle, Props>(
             data={items}
             keyExtractor={(item) => item.id}
             contentContainerStyle={{ paddingTop: topPadding, paddingBottom: 16 }}
-            ListHeaderComponent={
-              showFilter ? (
-                <View style={[styles.filterBar, { backgroundColor: theme.bg }]}>
-                  {(
-                    [
-                      { key: "all", label: "全部" },
-                      { key: "video", label: "视频" },
-                      { key: "text", label: "图文" },
-                    ] as { key: DynFilter; label: string }[]
-                  ).map((f) => (
-                    <TouchableOpacity
-                      key={f.key}
-                      style={[
-                        styles.filterChip,
-                        dynFilter === f.key && styles.filterChipActive,
-                      ]}
-                      activeOpacity={0.7}
-                      onPress={() => switchFilter(f.key)}
-                    >
-                      <Text
-                        style={[
-                          styles.filterText,
-                          { color: theme.textSub },
-                          dynFilter === f.key && styles.filterTextActive,
-                        ]}
-                      >
-                        {f.label}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              ) : null
-            }
             renderItem={renderItem}
             onScroll={onScroll}
             scrollEventThrottle={16}
@@ -298,21 +255,6 @@ const styles = StyleSheet.create({
   wrap: { flex: 1 },
   center: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12 },
   emptyBox: { alignItems: "center", paddingVertical: 48 },
-  filterBar: {
-    flexDirection: "row",
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    gap: 8,
-  },
-  filterChip: {
-    paddingHorizontal: 16,
-    paddingVertical: 7,
-    borderRadius: 16,
-    backgroundColor: "rgba(128,128,128,0.12)",
-  },
-  filterChipActive: { backgroundColor: "#00AEEC" },
-  filterText: { fontSize: 13 },
-  filterTextActive: { color: "#fff", fontWeight: "600" },
   tip: { fontSize: 14 },
   loginBtn: {
     backgroundColor: "#00AEEC",

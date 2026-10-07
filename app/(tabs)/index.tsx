@@ -355,7 +355,7 @@ export default function HomeScreen() {
         ref={pagerRef}
         style={styles.pager}
         initialPage={1}
-        scrollEnabled={false}
+        scrollEnabled
         onPageSelected={onPageSelected}
       >
         <View key="live" collapsable={false}>
