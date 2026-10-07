@@ -1302,3 +1302,30 @@ export async function reportHeartbeat(opts: {
     // 心跳失败不影响播放，静默
   }
 }
+
+/** 重命名收藏夹。 */
+export async function renameFavFolder(mediaId: number, title: string): Promise<void> {
+  const biliJct = await ensureBiliJct();
+  if (!biliJct) throw new Error('NO_CSRF');
+  const body =
+    `media_id=${mediaId}` +
+    `&title=${encodeURIComponent(title)}` +
+    `&csrf=${encodeURIComponent(biliJct)}`;
+  const res = await api.post('/x/v3/fav/folder/edit', body, {
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+  });
+  if (res.data?.code !== 0) throw new Error(res.data?.message || `code=${res.data?.code}`);
+}
+
+/** 删除收藏夹（夹内视频不受影响）。 */
+export async function deleteFavFolder(mediaId: number): Promise<void> {
+  const biliJct = await ensureBiliJct();
+  if (!biliJct) throw new Error('NO_CSRF');
+  const body =
+    `media_ids=${mediaId}` +
+    `&csrf=${encodeURIComponent(biliJct)}`;
+  const res = await api.post('/x/v3/fav/folder/del', body, {
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+  });
+  if (res.data?.code !== 0) throw new Error(res.data?.message || `code=${res.data?.code}`);
+}
