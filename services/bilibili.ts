@@ -1262,3 +1262,43 @@ export async function setVideoFavBatch(
     if (res.data?.code !== 0) throw new Error(res.data?.message || `code=${res.data?.code}`);
   }
 }
+
+/**
+ * 上报播放心跳（尽力而为，失败静默）。
+ * B 站云端观看历史靠这个接口记录；不报则登录用户的历史页永远是空的。
+ * playType: 1=开始播放，0=播放中，4=结束播放。
+ */
+export async function reportHeartbeat(opts: {
+  aid: number;
+  bvid: string;
+  cid: number;
+  playedTime: number;
+  playType: 0 | 1 | 4;
+}): Promise<void> {
+  try {
+    if (!opts.aid || !opts.cid) return;
+    const [me, biliJct] = await Promise.all([
+      getUserInfo().catch(() => null),
+      ensureBiliJct().catch(() => null),
+    ]);
+    if (!me || !biliJct) return; // 未登录不上报
+    const played = Math.max(0, Math.floor(opts.playedTime));
+    const body =
+      `aid=${opts.aid}` +
+      `&bvid=${encodeURIComponent(opts.bvid)}` +
+      `&cid=${opts.cid}` +
+      `&mid=${me.mid}` +
+      `&played_time=${played}` +
+      `&realtime=${played}` +
+      `&start_ts=${Math.floor(Date.now() / 1000)}` +
+      `&type=3&dt=2` +
+      `&play_type=${opts.playType}` +
+      `&csrf=${encodeURIComponent(biliJct)}`;
+    const res = await api.post('/x/click-interface/web/heartbeat', body, {
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    });
+    if (res.data?.code !== 0) throw new Error(res.data?.message || `code=${res.data?.code}`);
+  } catch {
+    // 心跳失败不影响播放，静默
+  }
+}

@@ -30,7 +30,7 @@ import type {
   IVideoPlayer,
 } from "../services/types";
 import { buildDashMpdUri } from "../utils/dash";
-import { getVideoShot } from "../services/bilibili";
+import { getVideoShot, reportHeartbeat } from "../services/bilibili";
 import DanmakuOverlay from "./DanmakuOverlay";
 import { useTheme } from "../utils/theme";
 import { usePlayProgressStore } from "../store/playProgressStore";
@@ -128,6 +128,8 @@ interface Props {
   onUpPress?: () => void;
   /** 全屏控制栏 ⋯ 按钮：打开互动菜单（发弹幕 / 评论）。仅全屏 */
   onMorePress?: () => void;
+  /** 视频 aid：播放心跳上报用 */
+  aid?: number;
 }
 
 export const NativeVideoPlayer = forwardRef<NativeVideoPlayerRef, Props>(
@@ -172,6 +174,7 @@ export const NativeVideoPlayer = forwardRef<NativeVideoPlayerRef, Props>(
       onlineCount,
       onUpPress,
       onMorePress,
+      aid,
     }: Props,
     ref,
   ) {
@@ -221,6 +224,20 @@ export const NativeVideoPlayer = forwardRef<NativeVideoPlayerRef, Props>(
 
     // 续播：每 5s 持久化一次
     const lastSaveRef = useRef(0);
+    // 云端历史心跳节流：web 播放器约 15s 上报一次
+    const lastHeartbeatRef = useRef(0);
+    const heartbeatArgsRef = useRef({ aid: 0, bvid: "", cid: 0 });
+    heartbeatArgsRef.current = { aid: aid ?? 0, bvid: bvid ?? "", cid: cid ?? 0 };
+    // 退出播放时补报一次心跳（playType=4），让云端历史落到最新进度
+    useEffect(() => {
+      return () => {
+        const a = heartbeatArgsRef.current;
+        const t = currentTimeRef.current;
+        if (a.aid && a.bvid && a.cid && t > 5) {
+          reportHeartbeat({ ...a, playedTime: t, playType: 4 });
+        }
+      };
+    }, []);
 
     useEffect(() => {
       // 排除初始挂载（prevQn 或 currentQn === 0）
@@ -915,6 +932,17 @@ export const NativeVideoPlayer = forwardRef<NativeVideoPlayerRef, Props>(
                 if (nowSave - lastSaveRef.current > 5000) {
                   lastSaveRef.current = nowSave;
                   usePlayProgressStore.getState().save(bvid, ct, dur);
+                }
+                // 云端观看历史心跳（15s 节流，fire-and-forget）
+                if (nowSave - lastHeartbeatRef.current > 15000) {
+                  lastHeartbeatRef.current = nowSave;
+                  reportHeartbeat({
+                    aid: aid ?? 0,
+                    bvid,
+                    cid: cid ?? 0,
+                    playedTime: ct,
+                    playType: 0,
+                  });
                 }
               }
               // 拖动进度条时跳过 UI 更新，避免与用户拖动冲突

@@ -239,6 +239,7 @@ export function VideoPlayer({ playData, qualities, currentQn, onQualityChange, b
           onFullscreen={handleEnterFullscreen}
           bvid={bvid}
           cid={cid}
+          aid={aid}
           isFullscreen={false}
           initialTime={lastTimeRef.current}
           onTimeUpdate={(t) => { lastTimeRef.current = t; onTimeUpdate?.(t); }}
@@ -279,6 +280,7 @@ export function VideoPlayer({ playData, qualities, currentQn, onQualityChange, b
                 onFullscreen={handleExitFullscreen}
                 bvid={bvid}
                 cid={cid}
+                aid={aid}
                 danmakus={danmakus}
                 isFullscreen={true}
                 initialTime={lastTimeRef.current}
