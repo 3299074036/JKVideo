@@ -2,7 +2,7 @@
   "expo": {
     "name": "JKVideo",
     "slug": "jsvideo",
-    "version": "0.0.8",
+    "version": "0.0.9",
     "scheme": "exp+jsvideo",
     "orientation": "default",
     "icon": "./assets/icon.png",
@@ -31,7 +31,7 @@
         "android.permission.SYSTEM_ALERT_WINDOW"
       ],
       "package": "com.anonymous.jkvideo",
-      "versionCode": 8
+      "versionCode": 9
     },
     "web": {
       "bundler": "metro",
