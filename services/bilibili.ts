@@ -1125,7 +1125,7 @@ export async function sendDanmaku(
     `&color=16777215&fontsize=25&pool=0&mode=1&plat=1` +
     `&rnd=${Date.now()}` +
     `&csrf=${encodeURIComponent(biliJct)}`;
-  const res = await api.post('/x/v1/dm/post', body, {
+  const res = await api.post('/x/v2/dm/post', body, {
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
   });
   const code = res.data?.code;
