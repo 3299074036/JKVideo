@@ -127,6 +127,8 @@ interface Props {
   onlineCount?: number;
   /** 点击全屏顶栏 UP 主头像/昵称，跳转 UP 主页 */
   onUpPress?: () => void;
+  /** 全屏控制栏 ⋯ 按钮：打开互动菜单（发弹幕 / 评论）。仅全屏 */
+  onMorePress?: () => void;
 }
 
 export const NativeVideoPlayer = forwardRef<NativeVideoPlayerRef, Props>(
@@ -170,6 +172,7 @@ export const NativeVideoPlayer = forwardRef<NativeVideoPlayerRef, Props>(
       upFace,
       onlineCount,
       onUpPress,
+      onMorePress,
     }: Props,
     ref,
   ) {
@@ -1183,6 +1186,18 @@ export const NativeVideoPlayer = forwardRef<NativeVideoPlayerRef, Props>(
                         {RESIZE_SHORT[resizeMode]}
                       </Text>
                     </TouchableOpacity>
+                    {/* 互动菜单：发弹幕 / 评论，紧贴退出全屏左边 */}
+                    {onMorePress && (
+                      <TouchableOpacity
+                        style={styles.ctrlBtn}
+                        onPress={() => {
+                          onMorePress();
+                          showAndReset();
+                        }}
+                      >
+                        <Ionicons name="ellipsis-horizontal" size={18} color="#fff" />
+                      </TouchableOpacity>
+                    )}
                     <TouchableOpacity
                       style={styles.ctrlBtn}
                       onPress={onFullscreen}

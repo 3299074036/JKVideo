@@ -14,10 +14,13 @@ import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { VideoPlayer } from "../../components/VideoPlayer";
-import { getDanmaku, getOnlineCount, getUploaderStat } from "../../services/bilibili";
+import { getDanmaku, getOnlineCount, getUploaderStat, getVideoFavState, setVideoFav } from "../../services/bilibili";
 import type { DanmakuItem, VideoItem } from "../../services/types";
 import { useVideoDetail } from "../../hooks/useVideoDetail";
 import { useRelatedVideos } from "../../hooks/useRelatedVideos";
+import { useDanmakuSender } from "../../hooks/useDanmakuSender";
+import { useAuthStore } from "../../store/authStore";
+import { setCachedSeason } from "../../utils/seasonCache";
 import { formatCount, formatDuration, formatTime } from "../../utils/format";
 import { proxyImageUrl } from "../../utils/imageUrl";
 import { DownloadSheet } from "../../components/DownloadSheet";
@@ -111,6 +114,86 @@ export default function VideoDetailScreen() {
     }
   }, [following, toggleFollow]);
 
+  // 收藏：拉取状态 + 切换（乐观更新，失败回滚）
+  const isLoggedIn = useAuthStore((s) => s.isLoggedIn);
+  const [faved, setFaved] = useState<boolean | null>(null);
+  const favFolderRef = useRef<number | null>(null);
+  const initialFavedRef = useRef(false);
+  useEffect(() => {
+    if (!video?.aid || !isLoggedIn) {
+      setFaved(null);
+      favFolderRef.current = null;
+      return;
+    }
+    let cancelled = false;
+    getVideoFavState(video.aid)
+      .then((r) => {
+        if (cancelled) return;
+        setFaved(r.faved);
+        initialFavedRef.current = r.faved;
+        favFolderRef.current = r.folderId;
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [video?.aid, isLoggedIn]);
+
+  const toggleFav = useCallback(async () => {
+    if (!video?.aid) return;
+    if (!isLoggedIn) {
+      toast("请先登录后再收藏");
+      return;
+    }
+    const next = !(faved ?? false);
+    if (next && !favFolderRef.current) {
+      toast("请先在 B 站创建一个收藏夹");
+      return;
+    }
+    setFaved(next); // 乐观更新
+    try {
+      await setVideoFav(video.aid, favFolderRef.current!, next);
+      toast(next ? "已加入收藏" : "已取消收藏");
+    } catch (e: any) {
+      setFaved(!next); // 失败回滚
+      const m = e?.message;
+      if (m === "NO_CSRF") toast("请重新登录后再收藏");
+      else toast(`操作失败：${m || "未知错误"}`);
+    }
+  }, [video?.aid, isLoggedIn, faved]);
+
+  // 收藏数跟随收藏态 ±1（数字仅展示，不改 video.stat）
+  const actionStat = useMemo(() => {
+    if (!video?.stat) return video?.stat;
+    const delta =
+      faved === true && !initialFavedRef.current
+        ? 1
+        : faved === false && initialFavedRef.current
+          ? -1
+          : 0;
+    return delta ? { ...video.stat, favorite: Math.max(0, video.stat.favorite + delta) } : video.stat;
+  }, [video?.stat, faved]);
+
+  // 发弹幕：竖屏互动弹窗 / 全屏输入条共用；成功后本地即时上屏
+  const sendDm = useDanmakuSender();
+  const currentTimeRef = useRef(0);
+  const handleSendDanmaku = useCallback(
+    async (msg: string) => {
+      if (!currentCid || !bvid) throw new Error("视频信息缺失");
+      const t = currentTimeRef.current;
+      await sendDm(currentCid, bvid as string, msg, Math.floor(t * 1000));
+      setDanmakus((prev) => [
+        ...prev,
+        { time: t, mode: 1, fontSize: 25, color: 0xffffff, text: msg },
+      ]);
+    },
+    [currentCid, bvid, sendDm],
+  );
+  const handleTimeUpdate = useCallback((t: number) => {
+    currentTimeRef.current = t;
+    setCurrentTime(t);
+  }, []);
+
   // Sheet 顶部对齐播放器底部：safe-area 顶 inset + 播放器高度（无 TopBar，返回按钮悬浮在播放器上）
   const insets = useSafeAreaInsets();
   const { width: SCREEN_W } = useWindowDimensions();
@@ -188,10 +271,12 @@ export default function VideoDetailScreen() {
         bvid={bvid as string}
         cid={currentCid}
         danmakus={danmakus}
-        onTimeUpdate={setCurrentTime}
+        onTimeUpdate={handleTimeUpdate}
         initialTime={initialTime}
         onBack={() => router.back()}
         coverUrl={video?.pic ? proxyImageUrl(video.pic) : undefined}
+        aid={video?.aid ?? 0}
+        onSendDanmaku={handleSendDanmaku}
         onPrevPage={() => changePage(pageIndex - 1)}
         onNextPage={() => changePage(pageIndex + 1)}
         hasPrevPage={pages.length > 1 && pageIndex > 0}
@@ -246,13 +331,15 @@ export default function VideoDetailScreen() {
               {/* 动作按钮行 */}
               <View style={[styles.actionWrap, { borderTopColor: theme.border }]}>
                 <VideoActionRow
-                  stat={video.stat ?? undefined}
+                  stat={actionStat ?? undefined}
                   danmakuCount={danmakus.length || video.stat?.danmaku}
                   title={video.title}
                   shareUrl={shareUrl}
                   onDownload={() => setShowDownload(true)}
                   onComments={() => setEngagementTab("comments")}
                   onDanmaku={() => setEngagementTab("danmaku")}
+                  faved={faved}
+                  onToggleFav={toggleFav}
                 />
               </View>
 
@@ -315,6 +402,10 @@ export default function VideoDetailScreen() {
                   season={video.ugc_season}
                   currentBvid={bvid as string}
                   onEpisodePress={(epBvid) => router.replace(`/video/${epBvid}`)}
+                  onHeaderPress={() => {
+                    setCachedSeason(video.ugc_season!);
+                    router.push(`/season/${video.ugc_season!.id}`);
+                  }}
                 />
               )}
 
@@ -414,6 +505,7 @@ export default function VideoDetailScreen() {
         replyCount={video?.stat?.reply}
         danmakus={danmakus}
         currentTime={currentTime}
+        onSendDanmaku={handleSendDanmaku}
       />
       <FollowTagSheet
         visible={tagSheetVisible}
@@ -428,10 +520,12 @@ function SeasonSection({
   season,
   currentBvid,
   onEpisodePress,
+  onHeaderPress,
 }: {
   season: NonNullable<VideoItem["ugc_season"]>;
   currentBvid: string;
   onEpisodePress: (bvid: string) => void;
+  onHeaderPress: () => void;
 }) {
   const theme = useTheme();
   const { width: screenW } = useWindowDimensions();
@@ -466,11 +560,11 @@ function SeasonSection({
 
   return (
     <View style={[styles.seasonBox, { borderTopColor: theme.border, backgroundColor: theme.card }]}>
-      <View style={styles.seasonHeader}>
+      <TouchableOpacity style={styles.seasonHeader} onPress={onHeaderPress} activeOpacity={0.7}>
         <Text style={[styles.seasonTitle, { color: theme.text }]}>合集 · {season.title}</Text>
         <Text style={styles.seasonCount}>{season.ep_count}个视频</Text>
         <Ionicons name="chevron-forward" size={14} color="#999" />
-      </View>
+      </TouchableOpacity>
       <FlatList
         ref={listRef}
         horizontal

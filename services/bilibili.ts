@@ -1104,3 +1104,102 @@ export async function getDynamicFeed(
   }
   return { items, hasMore: !!data.has_more, offset: String(data.offset ?? '') };
 }
+
+/* ================= 互动写操作：发弹幕 / 评论 / 收藏 ================= */
+
+/** 发弹幕。progressMs 为视频进度（毫秒）。失败抛错（消息文本来自 B 站 code/message） */
+export async function sendDanmaku(
+  cid: number,
+  bvid: string,
+  msg: string,
+  progressMs: number,
+): Promise<void> {
+  const biliJct = await ensureBiliJct();
+  if (!biliJct) throw new Error('NO_CSRF');
+  const body =
+    `type=1` +
+    `&oid=${cid}` +
+    `&msg=${encodeURIComponent(msg)}` +
+    `&bvid=${encodeURIComponent(bvid)}` +
+    `&progress=${Math.max(0, Math.floor(progressMs))}` +
+    `&color=16777215&fontsize=25&pool=0&mode=1&plat=1` +
+    `&rnd=${Date.now()}` +
+    `&csrf=${encodeURIComponent(biliJct)}`;
+  const res = await api.post('/x/v1/dm/post', body, {
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+  });
+  const code = res.data?.code;
+  if (code !== 0) throw new Error(res.data?.message || `code=${code}`);
+}
+
+/** 发表评论。成功返回新评论 rpid，失败抛错 */
+export async function postComment(aid: number, message: string): Promise<{ rpid: number }> {
+  const biliJct = await ensureBiliJct();
+  if (!biliJct) throw new Error('NO_CSRF');
+  const body =
+    `oid=${aid}` +
+    `&type=1` +
+    `&message=${encodeURIComponent(message)}` +
+    `&plat=1` +
+    `&csrf=${encodeURIComponent(biliJct)}`;
+  const res = await api.post('/x/v2/reply/add', body, {
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+  });
+  const code = res.data?.code;
+  if (code !== 0) throw new Error(res.data?.message || `code=${code}`);
+  return { rpid: Number(res.data?.data?.rpid ?? 0) };
+}
+
+/** 评论点赞 / 取消赞。like=true 点赞，false 取消。失败抛错 */
+export async function toggleCommentLike(aid: number, rpid: number, like: boolean): Promise<void> {
+  const biliJct = await ensureBiliJct();
+  if (!biliJct) throw new Error('NO_CSRF');
+  const body =
+    `oid=${aid}` +
+    `&type=1` +
+    `&rpid=${rpid}` +
+    `&action=${like ? 1 : 0}` +
+    `&csrf=${encodeURIComponent(biliJct)}`;
+  const res = await api.post('/x/v2/reply/action', body, {
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+  });
+  const code = res.data?.code;
+  if (code !== 0) throw new Error(res.data?.message || `code=${code}`);
+}
+
+/**
+ * 查询视频收藏状态：顺带拿默认收藏夹 id（用于收藏操作）。
+ * 未登录返回 { faved: false, folderId: null }。
+ */
+export async function getVideoFavState(
+  aid: number,
+): Promise<{ faved: boolean; folderId: number | null }> {
+  const me = await getUserInfo().catch(() => null);
+  if (!me) return { faved: false, folderId: null };
+  // list-all 带 rid/type=2 时，每个 folder 会多返回 fav_state（1=该视频已收录）
+  const res = await api.get('/x/v3/fav/folder/created/list-all', {
+    params: { up_mid: me.mid, rid: aid, type: 2 },
+  });
+  if (res.data?.code !== 0) throw new Error(res.data?.message || `code=${res.data?.code}`);
+  const list: any[] = res.data?.data?.list ?? [];
+  return {
+    faved: list.some((f) => f.fav_state === 1),
+    folderId: list.length ? Number(list[0].id ?? list[0].fid ?? 0) || null : null,
+  };
+}
+
+/** 收藏 / 取消收藏视频（收进默认收藏夹）。失败抛错 */
+export async function setVideoFav(aid: number, folderId: number, fav: boolean): Promise<void> {
+  const biliJct = await ensureBiliJct();
+  if (!biliJct) throw new Error('NO_CSRF');
+  const body =
+    `rid=${aid}` +
+    `&type=2` +
+    (fav ? `&add_media_ids=${folderId}` : `&del_media_ids=${folderId}`) +
+    `&csrf=${encodeURIComponent(biliJct)}`;
+  const res = await api.post('/x/v3/fav/resource/deal', body, {
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+  });
+  const code = res.data?.code;
+  if (code !== 0) throw new Error(res.data?.message || `code=${code}`);
+}

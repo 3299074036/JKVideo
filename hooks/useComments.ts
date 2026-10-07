@@ -65,5 +65,19 @@ export function useComments(aid: number, sort: number) {
     }
   }, []);
 
-  return { comments, loading, hasMore, load };
+  /** 发表评论后插到列表顶部（乐观插入，rpid 为服务端返回） */
+  const prependComment = useCallback((c: Comment) => {
+    loadSeqRef.current += 1; // 作废在途分页，避免把旧页追加到新评论前面
+    cursorRef.current = '';
+    hasMoreRef.current = true;
+    setHasMore(true);
+    setComments((prev) => [c, ...prev.filter((x) => x.rpid !== c.rpid)]);
+  }, []);
+
+  /** 局部更新一条评论（如点赞数/点赞态），不触发重拉 */
+  const updateComment = useCallback((rpid: number, patch: Partial<Comment>) => {
+    setComments((prev) => prev.map((c) => (c.rpid === rpid ? { ...c, ...patch } : c)));
+  }, []);
+
+  return { comments, loading, hasMore, load, prependComment, updateComment };
 }

@@ -64,6 +64,8 @@ export interface Comment {
   like: number;
   ctime: number;
   replies: Comment[] | null;
+  /** 1=我已点赞，0/缺省=未点赞（/x/v2/reply 接口返回） */
+  action?: number;
 }
 
 export interface DashSegmentBase {

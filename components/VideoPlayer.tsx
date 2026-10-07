@@ -1,6 +1,7 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { View, StyleSheet, Text, Platform, StatusBar, BackHandler, useWindowDimensions } from 'react-native';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { View, StyleSheet, Text, Platform, StatusBar, BackHandler, useWindowDimensions, TouchableOpacity } from 'react-native';
 import { Image } from 'expo-image';
+import { Ionicons } from '@expo/vector-icons';
 // expo-screen-orientation requires a dev build; gracefully degrade in Expo Go
 let ScreenOrientation: typeof import('expo-screen-orientation') | null = null;
 try { ScreenOrientation = require('expo-screen-orientation'); } catch {}
@@ -21,6 +22,9 @@ async function setImmersive(hidden: boolean) {
 import { NativeVideoPlayer, type ResizeMode, type VideoPageInfo } from './NativeVideoPlayer';
 import type { PlayUrlResponse, DanmakuItem } from '../services/types';
 import { useTheme } from '../utils/theme';
+import { BottomInputBar } from './BottomInputBar';
+import { CommentPanel } from './CommentPanel';
+import { toast } from '../utils/toast';
 
 interface Props {
   playData: PlayUrlResponse | null;
@@ -56,9 +60,13 @@ interface Props {
   onlineCount?: number;
   /** 点击全屏顶栏 UP 主信息：先退全屏再跳转 */
   onUpPress?: () => void;
+  /** 视频 aid：全屏评论面板用 */
+  aid: number;
+  /** 发弹幕（竖屏/全屏共用）：成功 resolve，发送成功后调用方已把弹幕即时上屏 */
+  onSendDanmaku: (msg: string) => Promise<void>;
 }
 
-export function VideoPlayer({ playData, qualities, currentQn, onQualityChange, bvid, cid, danmakus, onTimeUpdate, initialTime, onDanmakuListPress, onBack, coverUrl, onPrevPage, onNextPage, hasPrevPage, hasNextPage, pages, pageIndex, onPageChange, fullscreen, onFullscreenChange, upName, upFace, onlineCount, onUpPress }: Props) {
+export function VideoPlayer({ playData, qualities, currentQn, onQualityChange, bvid, cid, danmakus, onTimeUpdate, initialTime, onDanmakuListPress, onBack, coverUrl, onPrevPage, onNextPage, hasPrevPage, hasNextPage, pages, pageIndex, onPageChange, fullscreen, onFullscreenChange, upName, upFace, onlineCount, onUpPress, aid, onSendDanmaku }: Props) {
   const { width, height } = useWindowDimensions();
   const VIDEO_HEIGHT = width * 0.5625;
   const needsRotation = !ScreenOrientation && fullscreen;
@@ -89,6 +97,28 @@ export function VideoPlayer({ playData, qualities, currentQn, onQualityChange, b
   const [showDanmaku, setShowDanmaku] = useState(true);
   const [resizeMode, setResizeMode] = useState<ResizeMode>("contain");
   const [locked, setLocked] = useState(false);
+  // 全屏互动：⋯ 菜单 / 弹幕输入条 / 评论侧栏
+  const [moreVisible, setMoreVisible] = useState(false);
+  const [fsDmInput, setFsDmInput] = useState(false);
+  const [fsComments, setFsComments] = useState(false);
+
+  const handleFsSendDanmaku = useCallback(
+    async (msg: string) => {
+      await onSendDanmaku(msg);
+      setFsDmInput(false);
+      toast("弹幕发送成功");
+    },
+    [onSendDanmaku],
+  );
+
+  // 退出全屏时关掉互动层，避免竖屏实例残留
+  useEffect(() => {
+    if (!fullscreen) {
+      setMoreVisible(false);
+      setFsDmInput(false);
+      setFsComments(false);
+    }
+  }, [fullscreen]);
   // BUG-L-13：portraitRef 及 useImperativeHandle 命令式 API 经核查无任何调用方，已删除
 
   const handleEnterFullscreen = async () => {
@@ -277,8 +307,67 @@ export function VideoPlayer({ playData, qualities, currentQn, onQualityChange, b
                 onResizeModeChange={setResizeMode}
                 locked={locked}
                 onLockedChange={setLocked}
+                onMorePress={() => setMoreVisible(true)}
                 style={needsRotation ? { width: height, height: width } : { flex: 1 }}
               />
+              {/* 全屏互动层：⋯ 菜单 */}
+              {moreVisible && (
+                <>
+                  <TouchableOpacity
+                    style={styles.fsMoreDim}
+                    activeOpacity={1}
+                    onPress={() => setMoreVisible(false)}
+                  />
+                  <View style={styles.fsMoreMenu}>
+                    <TouchableOpacity
+                      style={styles.fsMoreItem}
+                      onPress={() => {
+                        setMoreVisible(false);
+                        setFsDmInput(true);
+                      }}
+                    >
+                      <Ionicons name="mail-outline" size={18} color="#333" />
+                      <Text style={styles.fsMoreTxt}>发弹幕</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.fsMoreItem, { borderBottomWidth: 0 }]}
+                      onPress={() => {
+                        setMoreVisible(false);
+                        setFsComments(true);
+                      }}
+                    >
+                      <Ionicons name="chatbubble-outline" size={18} color="#333" />
+                      <Text style={styles.fsMoreTxt}>评论</Text>
+                    </TouchableOpacity>
+                  </View>
+                </>
+              )}
+              {/* 全屏互动层：弹幕输入条 */}
+              {fsDmInput && (
+                <View style={styles.fsDmBar}>
+                  <BottomInputBar
+                    dark
+                    placeholder="发个友善的弹幕吧…"
+                    onSend={handleFsSendDanmaku}
+                  />
+                </View>
+              )}
+              {/* 全屏互动层：评论侧栏 */}
+              {fsComments && (
+                <View style={styles.fsCommentSheet}>
+                  <View style={styles.fsCommentHead}>
+                    <Text style={styles.fsCommentTitle}>评论</Text>
+                    <TouchableOpacity
+                      onPress={() => setFsComments(false)}
+                      hitSlop={8}
+                      style={styles.fsCommentClose}
+                    >
+                      <Ionicons name="close" size={20} color="#666" />
+                    </TouchableOpacity>
+                  </View>
+                  <CommentPanel aid={aid} showSort={false} />
+                </View>
+              )}
             </View>
           </View>
         )}
@@ -298,4 +387,54 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  // 全屏 ⋯ 菜单
+  fsMoreDim: { ...StyleSheet.absoluteFillObject },
+  fsMoreMenu: {
+    position: 'absolute',
+    right: 12,
+    bottom: 64,
+    width: 150,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    overflow: 'hidden',
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
+  },
+  fsMoreItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#f0f0f0',
+  },
+  fsMoreTxt: { fontSize: 14, color: '#333' },
+  // 全屏弹幕输入条：贴底，键盘弹起时 BottomInputBar 内部上移
+  fsDmBar: { position: 'absolute', left: 0, right: 0, bottom: 0 },
+  // 全屏评论侧栏
+  fsCommentSheet: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    right: 0,
+    width: 340,
+    backgroundColor: '#fff',
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
+  },
+  fsCommentHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#f0f0f0',
+  },
+  fsCommentTitle: { fontSize: 15, fontWeight: '700', color: '#222' },
+  fsCommentClose: { position: 'absolute', right: 8, padding: 6 },
 });

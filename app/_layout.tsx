@@ -124,6 +124,14 @@ function RootLayout() {
                 gestureDirection: "horizontal",
               }}
             />
+            <Stack.Screen
+              name="season"
+              options={{
+                animation: "slide_from_right",
+                gestureEnabled: true,
+                gestureDirection: "horizontal",
+              }}
+            />
           </Stack>
         </ErrorBoundary>
         <MiniPlayer />

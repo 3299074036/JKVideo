@@ -29,6 +29,9 @@ interface Props {
   onDownload: () => void;
   onComments: () => void;
   onDanmaku: () => void;
+  /** 收藏状态：true=已收藏，false=未收藏，null=未知/未登录（显示默认态） */
+  faved?: boolean | null;
+  onToggleFav?: () => void;
 }
 
 export const VideoActionRow = React.memo(function VideoActionRow({
@@ -39,6 +42,8 @@ export const VideoActionRow = React.memo(function VideoActionRow({
   onDownload,
   onComments,
   onDanmaku,
+  faved,
+  onToggleFav,
 }: Props) {
   const theme = useTheme();
 
@@ -113,10 +118,10 @@ export const VideoActionRow = React.memo(function VideoActionRow({
         bg={theme.inputBg}
       />
       <Btn
-        icon="star-outline"
+        icon={faved ? "star" : "star-outline"}
         label={stat?.favorite ? formatCount(stat.favorite) : "收藏"}
-        onPress={() => toast("暂未实现")}
-        color={theme.text}
+        onPress={onToggleFav ?? (() => toast("暂未实现"))}
+        color={faved ? "#00AEEC" : theme.text}
         bg={theme.inputBg}
       />
     </ScrollView>

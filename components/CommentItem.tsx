@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import type { Comment } from '../services/types';
@@ -7,10 +7,14 @@ import { formatTime } from '../utils/format';
 import { proxyImageUrl } from '../utils/imageUrl';
 import { useTheme } from '../utils/theme';
 
-interface Props { item: Comment; }
+interface Props {
+  item: Comment;
+  onToggleLike: (item: Comment) => void;
+}
 
-export function CommentItem({ item }: Props) {
+export const CommentItem = React.memo(function CommentItem({ item, onToggleLike }: Props) {
   const theme = useTheme();
+  const liked = (item.action ?? 0) === 1;
   return (
     <View style={[styles.row, { borderBottomColor: theme.border }]}>
       <Image source={{ uri: proxyImageUrl(item.member.avatar) }} style={styles.avatar} />
@@ -19,15 +23,26 @@ export function CommentItem({ item }: Props) {
         <Text style={[styles.message, { color: theme.text }]}>{item.content.message}</Text>
         <View style={styles.footer}>
           <Text style={[styles.time, { color: theme.textSub }]}>{formatTime(item.ctime)}</Text>
-          <View style={styles.likeRow}>
-            <Ionicons name="thumbs-up-outline" size={12} color={theme.textSub} />
-            <Text style={[styles.likeCount, { color: theme.textSub }]}>{item.like > 0 ? item.like : ''}</Text>
-          </View>
+          <TouchableOpacity
+            style={styles.likeRow}
+            onPress={() => onToggleLike(item)}
+            hitSlop={8}
+            activeOpacity={0.7}
+          >
+            <Ionicons
+              name={liked ? "thumbs-up" : "thumbs-up-outline"}
+              size={12}
+              color={liked ? "#00AEEC" : theme.textSub}
+            />
+            <Text style={[styles.likeCount, { color: liked ? "#00AEEC" : theme.textSub }]}>
+              {item.like > 0 ? item.like : ''}
+            </Text>
+          </TouchableOpacity>
         </View>
       </View>
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   row: { flexDirection: 'row', paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#eee' },
