@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getUserInfo } from '../services/bilibili';
+import { getUserInfo, exitPassportSession, clearNativeCookies } from '../services/bilibili';
 import { getSecure, setSecure, deleteSecure } from '../utils/secureStorage';
 
 interface AuthState {
@@ -48,6 +48,10 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   logout: async () => {
+    // 先让服务端会话失效（best-effort），再清 WebView/原生 Cookie，
+    // 否则下次打开官方登录页会被自动登录
+    await exitPassportSession();
+    await clearNativeCookies();
     await deleteSecure('SESSDATA');
     await deleteSecure('bili_jct');
     await AsyncStorage.multiRemove(['UID', 'USERNAME', 'FACE']);

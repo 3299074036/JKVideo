@@ -40,9 +40,30 @@ const INJECTED_JS = `
       }
     } catch (e) {}
   }
-  hideScanTab();
+  // 藏掉官方页自己的顶栏（标题 + 返回键），只留 App 原生顶栏，避免双顶栏叠加
+  function hideOfficialHeader() {
+    try {
+      var titles = ['手机号登录/注册', '账号密码登录'];
+      var nodes = document.querySelectorAll('div,span,p,h1,h2,header');
+      for (var i = 0; i < nodes.length; i++) {
+        var t = (nodes[i].textContent || '').trim();
+        if (titles.indexOf(t) >= 0) {
+          var el = nodes[i];
+          for (var d = 0; d < 5 && el && el !== document.body; d++) {
+            try {
+              var r = el.getBoundingClientRect();
+              if (r.height > 0 && r.height < 160 && r.top < 140) { el.style.display = 'none'; break; }
+            } catch (e) {}
+            el = el.parentElement;
+          }
+        }
+      }
+    } catch (e) {}
+  }
+  function sweep() { hideScanTab(); hideOfficialHeader(); }
+  sweep();
   try {
-    new MutationObserver(hideScanTab).observe(document.documentElement, { childList: true, subtree: true });
+    new MutationObserver(sweep).observe(document.documentElement, { childList: true, subtree: true });
   } catch (e) {}
   function checkLogin() {
     try {

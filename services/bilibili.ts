@@ -151,6 +151,39 @@ export async function ensureBiliJct(): Promise<string | null> {
   return biliJct ?? null;
 }
 
+/**
+ * 清空原生 Cookie 存储。
+ * Android 上 WebView 与原生网络栈共用同一份 CookieManager，官方页 WebView 登录的
+ * 会话也落在这里；退出登录时必须清掉，否则下次打开官方登录页会被自动登录。
+ */
+export async function clearNativeCookies(): Promise<void> {
+  if (isWeb || !CookieManager) return;
+  try {
+    await CookieManager.clearAll();
+  } catch {
+    // 忽略：本地清理照常进行
+  }
+}
+
+/**
+ * 通知 B 站服务端销毁本次登录会话（官方退出接口），best-effort，失败忽略。
+ * 必须在清掉本地 bili_jct 之前调用。
+ */
+export async function exitPassportSession(): Promise<void> {
+  if (isWeb) return;
+  try {
+    const jct = await getSecure('bili_jct');
+    if (!jct) return;
+    await axios.post(
+      `${PASSPORT}/login/exit/v2`,
+      `biliCSRF=${encodeURIComponent(jct)}`,
+      { headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, timeout: 10000 }
+    );
+  } catch {
+    // 忽略：本地清理照常进行
+  }
+}
+
 // ─── Request deduplication ──────────────────────────────────────────────────
 // Prevents identical concurrent requests (same URL + params) from hitting the network twice.
 const inflightRequests = new Map<string, Promise<any>>();
