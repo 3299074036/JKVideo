@@ -14,7 +14,7 @@ import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { VideoPlayer } from "../../components/VideoPlayer";
-import { getDanmaku, getOnlineCount, getUploaderStat, getVideoFavState, setVideoFav } from "../../services/bilibili";
+import { getDanmaku, getOnlineCount, getUploaderStat, getVideoFavState } from "../../services/bilibili";
 import type { DanmakuItem, VideoItem } from "../../services/types";
 import { useVideoDetail } from "../../hooks/useVideoDetail";
 import { useRelatedVideos } from "../../hooks/useRelatedVideos";
@@ -32,6 +32,7 @@ import { VideoActionRow } from "../../components/VideoActionRow";
 import { DescriptionSheet } from "../../components/DescriptionSheet";
 import { EngagementSheet, type EngagementTab } from "../../components/EngagementSheet";
 import { FollowTagSheet } from "../../components/FollowTagSheet";
+import { FavFolderSheet } from "../../components/FavFolderSheet";
 import { useFollow } from "../../hooks/useFollow";
 
 const BVID_RE = /^BV[0-9A-Za-z]{10}$/;
@@ -114,15 +115,14 @@ export default function VideoDetailScreen() {
     }
   }, [following, toggleFollow]);
 
-  // 收藏：拉取状态 + 切换（乐观更新，失败回滚）
+  // 收藏：点开收藏夹选择弹窗；弹窗确定后按选择态批量增删
   const isLoggedIn = useAuthStore((s) => s.isLoggedIn);
   const [faved, setFaved] = useState<boolean | null>(null);
-  const favFolderRef = useRef<number | null>(null);
+  const [favSheetVisible, setFavSheetVisible] = useState(false);
   const initialFavedRef = useRef(false);
   useEffect(() => {
     if (!video?.aid || !isLoggedIn) {
       setFaved(null);
-      favFolderRef.current = null;
       return;
     }
     let cancelled = false;
@@ -131,7 +131,6 @@ export default function VideoDetailScreen() {
         if (cancelled) return;
         setFaved(r.faved);
         initialFavedRef.current = r.faved;
-        favFolderRef.current = r.folderId;
       })
       .catch(() => {});
     return () => {
@@ -139,28 +138,19 @@ export default function VideoDetailScreen() {
     };
   }, [video?.aid, isLoggedIn]);
 
-  const toggleFav = useCallback(async () => {
+  const handleFavPress = useCallback(() => {
     if (!video?.aid) return;
     if (!isLoggedIn) {
       toast("请先登录后再收藏");
       return;
     }
-    const next = !(faved ?? false);
-    if (next && !favFolderRef.current) {
-      toast("请先在 B 站创建一个收藏夹");
-      return;
-    }
-    setFaved(next); // 乐观更新
-    try {
-      await setVideoFav(video.aid, favFolderRef.current!, next);
-      toast(next ? "已加入收藏" : "已取消收藏");
-    } catch (e: any) {
-      setFaved(!next); // 失败回滚
-      const m = e?.message;
-      if (m === "NO_CSRF") toast("请重新登录后再收藏");
-      else toast(`操作失败：${m || "未知错误"}`);
-    }
-  }, [video?.aid, isLoggedIn, faved]);
+    setFavSheetVisible(true);
+  }, [video?.aid, isLoggedIn]);
+
+  const handleFavChanged = useCallback((next: boolean) => {
+    setFaved(next);
+    initialFavedRef.current = next;
+  }, []);
 
   // 收藏数跟随收藏态 ±1（数字仅展示，不改 video.stat）
   const actionStat = useMemo(() => {
@@ -339,7 +329,7 @@ export default function VideoDetailScreen() {
                   onComments={() => setEngagementTab("comments")}
                   onDanmaku={() => setEngagementTab("danmaku")}
                   faved={faved}
-                  onToggleFav={toggleFav}
+                  onToggleFav={handleFavPress}
                 />
               </View>
 
@@ -511,6 +501,12 @@ export default function VideoDetailScreen() {
         visible={tagSheetVisible}
         onClose={() => setTagSheetVisible(false)}
         onConfirm={(tagids) => followToTags(tagids)}
+      />
+      <FavFolderSheet
+        visible={favSheetVisible}
+        onClose={() => setFavSheetVisible(false)}
+        aid={video?.aid ?? 0}
+        onChanged={handleFavChanged}
       />
     </SafeAreaView>
   );

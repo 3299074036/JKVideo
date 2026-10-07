@@ -12,7 +12,6 @@ import {
   TouchableOpacity,
   TouchableWithoutFeedback,
   Text,
-  Modal,
   Image,
   PanResponder,
   ActivityIndicator,
@@ -286,6 +285,61 @@ export const NativeVideoPlayer = forwardRef<NativeVideoPlayerRef, Props>(
     const [shots, setShots] = useState<VideoShotData | null>(null);
 
     const [showResize, setShowResize] = useState(false);
+    // 锚定上拉面板：倍速/画质/画面/分P 共用。打开时从控制栏上方滑出，
+    // 不再用居中 Modal。panelAnim 只播入场动画，关闭时直接卸载。
+    const panelAnim = useRef(new Animated.Value(0)).current;
+    const anyPanelOpen = showQuality || showRate || showResize || showPages;
+    useEffect(() => {
+      if (anyPanelOpen) {
+        panelAnim.setValue(0);
+        Animated.timing(panelAnim, {
+          toValue: 1,
+          duration: 200,
+          useNativeDriver: true,
+        }).start();
+      }
+    }, [anyPanelOpen, panelAnim]);
+
+    const renderPanel = (
+      visible: boolean,
+      onClose: () => void,
+      title: string,
+      children: React.ReactNode,
+    ) => {
+      if (!visible) return null;
+      return (
+        <View style={styles.panelWrap}>
+          <TouchableOpacity
+            style={StyleSheet.absoluteFillObject}
+            activeOpacity={1}
+            onPress={() => {
+              onClose();
+              showAndReset();
+            }}
+          />
+          <Animated.View
+            style={[
+              styles.panelCard,
+              { backgroundColor: theme.modalBg },
+              {
+                opacity: panelAnim,
+                transform: [
+                  {
+                    translateY: panelAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [24, 0],
+                    }),
+                  },
+                ],
+              },
+            ]}
+          >
+            <Text style={[styles.qualityTitle, { color: theme.modalText }]}>{title}</Text>
+            {children}
+          </Animated.View>
+        </View>
+      );
+    };
     const RESIZE_OPTIONS: { mode: ResizeMode; label: string }[] = [
       { mode: "contain", label: "适应屏幕" },
       { mode: "cover", label: "等比裁切铺满" },
@@ -1353,179 +1407,139 @@ export const NativeVideoPlayer = forwardRef<NativeVideoPlayerRef, Props>(
           </View>
         )}
 
-        {/* 选画面填充模式 */}
-        <Modal visible={showResize} transparent animationType="fade">
-          <TouchableOpacity
-            style={styles.modalOverlay}
-            onPress={() => setShowResize(false)}
-          >
-            <View
-              style={[styles.qualityList, { backgroundColor: theme.modalBg }]}
+        {/* 选画面填充模式：锚定在控制栏上方的上拉面板 */}
+        {renderPanel(
+          showResize,
+          () => setShowResize(false),
+          "画面",
+          RESIZE_OPTIONS.map((o) => (
+            <TouchableOpacity
+              key={o.mode}
+              style={[styles.qualityItem, { borderTopColor: theme.modalBorder }]}
+              onPress={() => {
+                onResizeModeChange(o.mode);
+                setShowResize(false);
+                showAndReset();
+              }}
             >
-              <Text style={[styles.qualityTitle, { color: theme.modalText }]}>
-                画面
+              <Text
+                style={[
+                  styles.qualityItemText,
+                  { color: theme.modalTextSub },
+                  o.mode === resizeMode && styles.qualityItemActive,
+                ]}
+              >
+                {o.label}
               </Text>
-              {RESIZE_OPTIONS.map((o) => (
-                <TouchableOpacity
-                  key={o.mode}
+              {o.mode === resizeMode && (
+                <Ionicons name="checkmark" size={16} color="#00AEEC" />
+              )}
+            </TouchableOpacity>
+          )),
+        )}
+
+        {/* 选清晰度：锚定在控制栏上方的上拉面板 */}
+        {renderPanel(
+          showQuality,
+          () => setShowQuality(false),
+          "选择清晰度",
+          qualities.map((q) => (
+            <TouchableOpacity
+              key={q.qn}
+              style={[styles.qualityItem, { borderTopColor: theme.modalBorder }]}
+              onPress={() => {
+                setShowQuality(false);
+                onQualityChange(q.qn);
+                showAndReset();
+              }}
+            >
+              <Text
+                style={[
+                  styles.qualityItemText,
+                  { color: theme.modalTextSub },
+                  q.qn === currentQn && styles.qualityItemActive,
+                ]}
+              >
+                {q.desc}
+                {q.qn === 126 ? " DV" : ""}
+              </Text>
+              {q.qn === currentQn && (
+                <Ionicons name="checkmark" size={16} color="#00AEEC" />
+              )}
+            </TouchableOpacity>
+          )),
+        )}
+
+        {/* 选倍速：锚定在控制栏上方的上拉面板 */}
+        {renderPanel(
+          showRate,
+          () => setShowRate(false),
+          "选择倍速",
+          RATE_OPTIONS.map((r) => (
+            <TouchableOpacity
+              key={r}
+              style={[styles.qualityItem, { borderTopColor: theme.modalBorder }]}
+              onPress={() => {
+                onRateChange(r);
+                setShowRate(false);
+                showAndReset();
+              }}
+            >
+              <Text
+                style={[
+                  styles.qualityItemText,
+                  { color: theme.modalTextSub },
+                  r === rate && styles.qualityItemActive,
+                ]}
+              >
+                {r === 1 ? "正常" : `${r}x`}
+              </Text>
+              {r === rate && (
+                <Ionicons name="checkmark" size={16} color="#00AEEC" />
+              )}
+            </TouchableOpacity>
+          )),
+        )}
+
+        {/* 选分 P：锚定在控制栏上方的上拉面板 */}
+        {renderPanel(
+          showPages,
+          () => setShowPages(false),
+          `分P（${pages?.length ?? 0}）`,
+          <ScrollView style={{ maxHeight: 300 }}>
+            {(pages ?? []).map((p, i) => (
+              <TouchableOpacity
+                key={p.cid}
+                style={[styles.qualityItem, { borderTopColor: theme.modalBorder }]}
+                onPress={() => {
+                  setShowPages(false);
+                  if (i !== pageIndex) onPageChange?.(i);
+                  showAndReset();
+                }}
+              >
+                <Text
                   style={[
-                    styles.qualityItem,
-                    { borderTopColor: theme.modalBorder },
+                    styles.qualityItemText,
+                    styles.pageItemText,
+                    { color: theme.modalTextSub },
+                    i === pageIndex && styles.qualityItemActive,
                   ]}
-                  onPress={() => {
-                    onResizeModeChange(o.mode);
-                    setShowResize(false);
-                    showAndReset();
-                  }}
+                  numberOfLines={1}
                 >
-                  <Text
-                    style={[
-                      styles.qualityItemText,
-                      { color: theme.modalTextSub },
-                      o.mode === resizeMode && styles.qualityItemActive,
-                    ]}
-                  >
-                    {o.label}
+                  {`P${i + 1} ${p.part}`}
+                </Text>
+                {!!p.duration && p.duration > 0 && (
+                  <Text style={[styles.pageDuration, { color: theme.modalTextSub }]}>
+                    {formatDuration(p.duration)}
                   </Text>
-                  {o.mode === resizeMode && (
-                    <Ionicons name="checkmark" size={16} color="#00AEEC" />
-                  )}
-                </TouchableOpacity>
-              ))}
-            </View>
-          </TouchableOpacity>
-        </Modal>
-
-        {/* 选清晰度 */}
-        <Modal visible={showQuality} transparent animationType="fade">
-          <TouchableOpacity
-            style={styles.modalOverlay}
-            onPress={() => setShowQuality(false)}
-          >
-            <View style={[styles.qualityList, { backgroundColor: theme.modalBg }]}>
-              <Text style={[styles.qualityTitle, { color: theme.modalText }]}>选择清晰度</Text>
-              {qualities.map((q) => (
-                <TouchableOpacity
-                  key={q.qn}
-                  style={[styles.qualityItem, { borderTopColor: theme.modalBorder }]}
-                  onPress={() => {
-                    setShowQuality(false);
-                    onQualityChange(q.qn);
-                    showAndReset();
-                  }}
-                >
-                  <Text
-                    style={[
-                      styles.qualityItemText,
-                      { color: theme.modalTextSub },
-                      q.qn === currentQn && styles.qualityItemActive,
-                    ]}
-                  >
-                    {q.desc}
-                    {q.qn === 126 ? " DV" : ""}
-                  </Text>
-                  {q.qn === currentQn && (
-                    <Ionicons name="checkmark" size={16} color="#00AEEC" />
-                  )}
-                </TouchableOpacity>
-              ))}
-            </View>
-          </TouchableOpacity>
-        </Modal>
-
-        {/* 选倍速 */}
-        <Modal visible={showRate} transparent animationType="fade">
-          <TouchableOpacity
-            style={styles.modalOverlay}
-            onPress={() => setShowRate(false)}
-          >
-            <View style={[styles.qualityList, { backgroundColor: theme.modalBg }]}>
-              <Text style={[styles.qualityTitle, { color: theme.modalText }]}>选择倍速</Text>
-              {RATE_OPTIONS.map((r) => (
-                <TouchableOpacity
-                  key={r}
-                  style={[styles.qualityItem, { borderTopColor: theme.modalBorder }]}
-                  onPress={() => {
-                    onRateChange(r);
-                    setShowRate(false);
-                    showAndReset();
-                  }}
-                >
-                  <Text
-                    style={[
-                      styles.qualityItemText,
-                      { color: theme.modalTextSub },
-                      r === rate && styles.qualityItemActive,
-                    ]}
-                  >
-                    {r === 1 ? "正常" : `${r}x`}
-                  </Text>
-                  {r === rate && (
-                    <Ionicons name="checkmark" size={16} color="#00AEEC" />
-                  )}
-                </TouchableOpacity>
-              ))}
-            </View>
-          </TouchableOpacity>
-        </Modal>
-
-        {/* 选分 P：多分 P 视频的全屏分 P 列表 */}
-        <Modal visible={showPages} transparent animationType="fade">
-          <TouchableOpacity
-            style={styles.modalOverlay}
-            activeOpacity={1}
-            onPress={() => setShowPages(false)}
-          >
-            <View
-              style={[styles.qualityList, { backgroundColor: theme.modalBg }]}
-            >
-              <Text style={[styles.qualityTitle, { color: theme.modalText }]}>
-                分P（{pages?.length ?? 0}）
-              </Text>
-              <ScrollView style={{ maxHeight: 340 }}>
-                {(pages ?? []).map((p, i) => (
-                  <TouchableOpacity
-                    key={p.cid}
-                    style={[
-                      styles.qualityItem,
-                      { borderTopColor: theme.modalBorder },
-                    ]}
-                    onPress={() => {
-                      setShowPages(false);
-                      if (i !== pageIndex) onPageChange?.(i);
-                      showAndReset();
-                    }}
-                  >
-                    <Text
-                      style={[
-                        styles.qualityItemText,
-                        styles.pageItemText,
-                        { color: theme.modalTextSub },
-                        i === pageIndex && styles.qualityItemActive,
-                      ]}
-                      numberOfLines={1}
-                    >
-                      {`P${i + 1} ${p.part}`}
-                    </Text>
-                    {!!p.duration && p.duration > 0 && (
-                      <Text
-                        style={[
-                          styles.pageDuration,
-                          { color: theme.modalTextSub },
-                        ]}
-                      >
-                        {formatDuration(p.duration)}
-                      </Text>
-                    )}
-                    {i === pageIndex && (
-                      <Ionicons name="checkmark" size={16} color="#00AEEC" />
-                    )}
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            </View>
-          </TouchableOpacity>
-        </Modal>
+                )}
+                {i === pageIndex && (
+                  <Ionicons name="checkmark" size={16} color="#00AEEC" />
+                )}
+              </TouchableOpacity>
+            ))}
+          </ScrollView>,
+        )}
       </View>
     );
   },
@@ -1701,18 +1715,26 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   qualityText: { color: "#fff", fontSize: 11, fontWeight: "600" },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.5)",
-    justifyContent: "center",
-    alignItems: "center",
+  // 锚定上拉面板：盖住播放器区域，点外部关闭；面板贴在控制栏上方、按钮附近
+  panelWrap: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 60,
+    elevation: 60,
   },
-  qualityList: {
-    backgroundColor: "#fff",
+  panelCard: {
+    position: "absolute",
+    right: 10,
+    bottom: 64,
+    width: 200,
+    maxHeight: "78%",
     borderRadius: 12,
     paddingVertical: 8,
     paddingHorizontal: 16,
-    minWidth: 180,
+    elevation: 8,
+    shadowColor: "#000",
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
   },
   qualityTitle: {
     fontSize: 15,

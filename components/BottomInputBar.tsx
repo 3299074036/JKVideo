@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator } from "react-native";
 import { useTheme } from "../utils/theme";
+import { useKeyboardHeight } from "../hooks/useKeyboardHeight";
 import { toast } from "../utils/toast";
 
 interface Props {
@@ -14,8 +15,8 @@ interface Props {
 
 /**
  * 底部输入条：弹幕 / 评论共用。
- * 所在容器均为 adjustResize（Activity 与 RN Modal 皆是），键盘弹起时布局自动压缩，
- * 输入条贴底即位于键盘上方，无需手动处理键盘高度。
+ * 键盘弹起时用实测键盘高度把输入条顶到键盘上沿（translateY），
+ * 不依赖 windowSoftInputMode 的压缩行为。
  */
 export const BottomInputBar = React.memo(function BottomInputBar({
   placeholder,
@@ -24,6 +25,7 @@ export const BottomInputBar = React.memo(function BottomInputBar({
   maxLength = 200,
 }: Props) {
   const theme = useTheme();
+  const kb = useKeyboardHeight();
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const canSend = text.trim().length > 0 && !sending;
@@ -50,6 +52,7 @@ export const BottomInputBar = React.memo(function BottomInputBar({
       style={[
         styles.bar,
         dark ? styles.barDark : { backgroundColor: theme.sheetBg, borderTopColor: theme.modalBorder },
+        { transform: [{ translateY: -kb }] },
       ]}
     >
       <TextInput

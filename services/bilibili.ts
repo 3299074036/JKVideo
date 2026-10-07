@@ -1203,3 +1203,62 @@ export async function setVideoFav(aid: number, folderId: number, fav: boolean): 
   const code = res.data?.code;
   if (code !== 0) throw new Error(res.data?.message || `code=${code}`);
 }
+
+/** 收藏夹列表（含指定视频在每夹的收录态 fav_state）。未登录抛错。 */
+export async function getFavFoldersWithState(
+  aid: number,
+): Promise<Array<{ id: number; title: string; mediaCount: number; cover: string; favState: boolean }>> {
+  const me = await getUserInfo();
+  const res = await api.get('/x/v3/fav/folder/created/list-all', {
+    params: { up_mid: me.mid, rid: aid, type: 2 },
+  });
+  if (res.data?.code !== 0) throw new Error(res.data?.message || `code=${res.data?.code}`);
+  const list: any[] = res.data?.data?.list ?? [];
+  return list.map((f: any) => ({
+    id: Number(f.id ?? f.fid ?? 0),
+    title: String(f.title ?? ''),
+    mediaCount: Number(f.media_count ?? 0),
+    cover: String(f.cover ?? ''),
+    favState: f.fav_state === 1,
+  }));
+}
+
+/** 新建收藏夹。成功返回新夹 id。 */
+export async function createFavFolder(title: string): Promise<number> {
+  const biliJct = await ensureBiliJct();
+  if (!biliJct) throw new Error('NO_CSRF');
+  const body =
+    `title=${encodeURIComponent(title)}` +
+    `&privacy=0` +
+    `&csrf=${encodeURIComponent(biliJct)}`;
+  const res = await api.post('/x/v3/fav/folder/add', body, {
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+  });
+  if (res.data?.code !== 0) throw new Error(res.data?.message || `code=${res.data?.code}`);
+  return Number(res.data?.data?.id ?? 0);
+}
+
+/** 批量收藏/取消收藏：addIds 收进这些夹，delIds 从这些夹移除。 */
+export async function setVideoFavBatch(
+  aid: number,
+  addIds: number[],
+  delIds: number[],
+): Promise<void> {
+  const biliJct = await ensureBiliJct();
+  if (!biliJct) throw new Error('NO_CSRF');
+  const calls: Array<{ add?: string; del?: string }> = [];
+  if (addIds.length) calls.push({ add: addIds.join(',') });
+  if (delIds.length) calls.push({ del: delIds.join(',') });
+  for (const c of calls) {
+    const body =
+      `rid=${aid}` +
+      `&type=2` +
+      (c.add ? `&add_media_ids=${encodeURIComponent(c.add)}` : '') +
+      (c.del ? `&del_media_ids=${encodeURIComponent(c.del)}` : '') +
+      `&csrf=${encodeURIComponent(biliJct)}`;
+    const res = await api.post('/x/v3/fav/resource/deal', body, {
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    });
+    if (res.data?.code !== 0) throw new Error(res.data?.message || `code=${res.data?.code}`);
+  }
+}
